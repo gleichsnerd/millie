@@ -46,7 +46,9 @@ class BaseModel(ABC):
                 if isinstance(value, dict):
                     # Only include non-empty dicts
                     if value:
-                        data[key] = json.dumps(value)
+                        # Serialize complex types in the dict
+                        serialized_value = self._serialize_complex_type(value)
+                        data[key] = json.dumps(serialized_value)
                 else:
                     data[key] = value
         
