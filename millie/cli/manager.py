@@ -8,6 +8,8 @@ import time
 from click import echo
 from pymilvus import Collection
 from dotenv import load_dotenv
+
+from millie.db.migration_manager import MigrationManager
 load_dotenv()
 
 

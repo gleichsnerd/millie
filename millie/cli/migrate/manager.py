@@ -8,9 +8,16 @@ import time
 from click import echo
 from pymilvus import Collection
 from dotenv import load_dotenv
+import json
+from datetime import datetime
 
 from millie.db.migration_history import MigrationHistoryModel
 from millie.db.session import MilvusSession
+from millie.db.schema_history import SchemaHistory
+from sandbox.models import RuleModel  # We'll make this more dynamic later
+from millie.db.schema_differ import SchemaDiffer
+from millie.db.migration_manager import MigrationManager
+from millie.db.migration_builder import MigrationBuilder
 load_dotenv()
 
 
@@ -53,28 +60,71 @@ def schema_history():
 def rebuild():
     """Rebuild schema history from existing migrations."""
     try:
-        from millie import MigrationManager
-        from ..config.rag_config import RAGConfig
-
-        config = RAGConfig()
-        manager = MigrationManager(config)
-        manager.rebuild_schema_history()
-        echo("✅ Successfully rebuilt schema history")
+        echo("🤖 Rebuilding schema history from migrations...")
+        
+        # Get schema directory from env or default
+        schema_dir = os.getenv("MILLIE_SCHEMA_DIR", "schema")
+        history_dir = os.path.join(schema_dir, "history")
+        migrations_dir = os.path.join(schema_dir, "migrations")
+        
+        # Create schema history manager
+        history = SchemaHistory(history_dir, migrations_dir)
+        
+        # Find all models
+        manager = MigrationManager()
+        models = manager._find_all_models()
+        
+        # Rebuild each model's schema
+        for model in models:
+            echo(f"Rebuilding schema for {model.__name__}...")
+            schema = history.build_model_schema_from_migrations(model)
+            history.save_model_schema(schema)
+            echo(f"✅ Schema rebuilt for {model.__name__}")
+            
+        echo("\n✅ Successfully rebuilt all schema history files")
     except Exception as e:
         echo(f"❌ Error rebuilding schema history: {str(e)}", err=True)
         sys.exit(1)
 
 @migrate.command()
 @click.argument("name", required=False)
-@click.argument("--dry/--no-dry", required=False)
-def create(name, dry = False):
-    """Create a new migration file."""
+def create(name: str):
+    """Create a new migration based on schema changes."""
     try:
-        from millie import MigrationManager
-        manager = MigrationManager()
-        migration_file = manager.generate(name)
-        # if migration_file:
-        #     echo(f"✅ Created migration file: {migration_file}")
+        if not name:
+            name = click.prompt("Enter a name for the migration")
+            
+        echo("Checking for schema changes...")
+        manager = MigrationManager()        
+        changes = manager.detect_changes()
+        
+        if len(changes) == 0:
+            echo("No schema changes detected.")
+            sys.exit(0)
+        
+        for model_name, model_changes in changes.items():
+            echo(f"\nChanges detected in {model_name}:")
+            if model_changes["added"]:
+                echo("\nAdded fields:")
+                for field in model_changes["added"]:
+                    echo(f"  + {field.name} ({field.dtype})")
+            if model_changes["removed"]:
+                echo("\nRemoved fields:")
+                for field in model_changes["removed"]:
+                    echo(f"  - {field.name} ({field.dtype})")
+            if model_changes["modified"]:
+                echo("\nModified fields:")
+                for old, new in model_changes["modified"]:
+                    echo(f"  ~ {old.name}: {old.dtype} -> {new.dtype}")
+        
+    
+        migration_name = manager.generate_migration(name)
+            
+        if migration_name:
+            echo(f"✅ Created migration {migration_name}")
+        else:
+            echo("No migration created.")
+            
     except Exception as e:
         echo(f"❌ Error creating migration: {str(e)}", err=True)
         sys.exit(1)
