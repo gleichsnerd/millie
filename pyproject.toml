@@ -43,6 +43,10 @@ dev = [
     "pytest-cov>=6.0.0",
 ]
 
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["millie"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
