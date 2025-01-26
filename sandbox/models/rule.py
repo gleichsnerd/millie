@@ -1,9 +1,9 @@
 from typing import Dict, Any, List
 from dataclasses import dataclass, field
 from pymilvus import DataType, FieldSchema
-from millie import MilvusModel
+from millie.orm.milvus_model import MilvusModel
 
-@MilvusModel
+@MilvusModel()
 class RuleModel():
     """Model for game rules."""
     # Required fields from base class
@@ -38,10 +38,3 @@ class RuleModel():
     def format_rule(self) -> str:
         """Format rule for display."""
         return f"{self.section.upper()} - {self.type}: {self.description}"
-    
-    def applies_to_action(self, action_type: str) -> bool:
-        """Check if rule applies to a specific action type."""
-        return (
-            self.type == action_type or
-            self.metadata.get('applies_to', []).contains(action_type)
-        ) 

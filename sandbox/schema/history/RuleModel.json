@@ -1,0 +1,46 @@
+{
+  "name": "RuleModel",
+  "collection_name": "rules",
+  "schema": {
+    "fields": [
+      {
+        "name": "id",
+        "dtype": "VARCHAR",
+        "max_length": 100,
+        "is_primary": true
+      },
+      {
+        "name": "type",
+        "dtype": "VARCHAR",
+        "max_length": 50
+      },
+      {
+        "name": "section",
+        "dtype": "VARCHAR",
+        "max_length": 50
+      },
+      {
+        "name": "description",
+        "dtype": "VARCHAR",
+        "max_length": 1000
+      },
+      {
+        "name": "embedding",
+        "dtype": "FLOAT_VECTOR",
+        "dim": 1536
+      },
+      {
+        "name": "metadata",
+        "dtype": "JSON"
+      },
+      {
+        "name": "test_field",
+        "dtype": "VARCHAR",
+        "max_length": 1000
+      }
+    ]
+  },
+  "is_migration_collection": false,
+  "version": 2,
+  "updated_at": "2025-01-26T02:37:04.555887"
+}
