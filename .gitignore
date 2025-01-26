@@ -172,3 +172,6 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Folder for miscellaneous output files from Cursor for things like git scripts and PR descriptions
+.cursor/
