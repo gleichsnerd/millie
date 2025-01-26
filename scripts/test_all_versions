@@ -1,0 +1,41 @@
+#!/bin/bash
+
+# Exit on error
+set -e
+
+# Colors for output
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+# Function to run tests for a specific Python version
+run_tests_for_version() {
+    local venv_name="venv$1"
+    echo -e "\n${GREEN}Running tests with Python $1${NC}"
+    echo "----------------------------------------"
+    
+    if [ ! -d "$venv_name" ]; then
+        echo -e "${RED}Virtual environment $venv_name not found!${NC}"
+        echo "Please run ./scripts/create_virtualenvs first"
+        return 1
+    fi
+    
+    source "$venv_name/bin/activate"
+    
+    # Install package with dev dependencies
+    echo "Installing package with dev dependencies..."
+    pip install -e ".[dev]"
+    
+    # Run tests
+    echo "Running tests..."
+    python -m pytest tests/ -v
+    
+    deactivate
+}
+
+# Run tests for each Python version
+for version in "310" "311" "312" "313"; do
+    if ! run_tests_for_version $version; then
+        echo -e "${RED}Tests failed for Python $version${NC}"
+    fi
+done 

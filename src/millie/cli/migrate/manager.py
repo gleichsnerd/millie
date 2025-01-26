@@ -2,22 +2,13 @@
 import click
 import os
 import sys
-import subprocess
-from pathlib import Path
-import time
 from click import echo
-from pymilvus import Collection
 from dotenv import load_dotenv
-import json
-from datetime import datetime
 
 from millie.db.migration_history import MigrationHistoryModel
 from millie.db.session import MilvusSession
 from millie.db.schema_history import SchemaHistory
-from sandbox.models import RuleModel  # We'll make this more dynamic later
-from millie.db.schema_differ import SchemaDiffer
 from millie.db.migration_manager import MigrationManager
-from millie.db.migration_builder import MigrationBuilder
 load_dotenv()
 
 
@@ -40,16 +31,20 @@ def enforce_migration_table():
 @migrate.command()
 def init():
     """Initialize the migration history table."""
-    session = MilvusSession(host=os.getenv("MILVUS_HOST"), port=os.getenv("MILVUS_PORT"))
-    if check_migration_table():
-        echo("✅ Migration history table already exists.")
-    else:
-        echo("🤖Creating migration history table")
-        session.init_collection(MigrationHistoryModel)
-        # session.load_collection(MigrationHistoryModel)
-        echo("✅ Migration history table created.")
-    
-    session.unload_collection(MigrationHistoryModel)
+    try:
+        session = MilvusSession(host=os.getenv("MILVUS_HOST"), port=os.getenv("MILVUS_PORT"))
+        if check_migration_table():
+            echo("✅ Migration history table already exists.")
+        else:
+            echo("🤖Creating migration history table")
+            session.init_collection(MigrationHistoryModel)
+            # session.load_collection(MigrationHistoryModel)
+            echo("✅ Migration history table created.")
+        
+        session.unload_collection(MigrationHistoryModel)
+    except Exception as e:
+        echo(f"❌ Error connecting to database: {str(e)}", err=True)
+        sys.exit(1)
 
 @migrate.group()
 def schema_history():

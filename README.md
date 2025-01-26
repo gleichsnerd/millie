@@ -1,5 +1,8 @@
 # Millie, an ORM-esque library for Milvus and Python
 
+[![Tests](https://github.com/gleichsnerd/millie/actions/workflows/test.yml/badge.svg)](https://github.com/gleichsnerd/millie/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/gleichsnerd/millie/branch/main/graph/badge.svg)](https://codecov.io/gh/gleichsnerd/millie)
+
 *Users beware: Millie is currently in a very early stage of development. It is not yet ready for production use.*
 
 Millie is a library that aims to provide a helpful interface for interacting with Milvus. It is built on top of the [Milvus Python SDK](https://github.com/milvus-io/pymilvus), but aims to add an ORM layer with migration, seeding, and (eventually) cached embedding support in order to reduce the amount of boilerplate code required over time.

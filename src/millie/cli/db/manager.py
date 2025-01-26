@@ -25,11 +25,12 @@ def db():
     """
     pass
 
-
-
 @db.command()
-def check():
-    """Check if Milvus is running"""
+@click.option("--port", default=os.getenv("MILVUS_PORT", 19530), help="The port of the Milvus server")
+@click.option("--db-name", default=os.getenv("MILVUS_DB_NAME", "millie_sandbox"), help="The name of the Milvus database")
+@click.option("--host", default=os.getenv("MILVUS_HOST", "localhost"), help="The host of the Milvus server")
+def check(port, db_name, host):
+    """Check connection to the database and if it exists"""
     # First check the container
     result = run_docker_command(
         [
@@ -87,31 +88,34 @@ def check():
         echo("⚠️ Warning: Potential errors found in Milvus logs:")
         echo(logs_result.stderr)
 
-    echo(f"Attempting to connect to Milvus at {os.getenv('MILVUS_HOST')}:{os.getenv('MILVUS_PORT')}...")
+    echo(f"Attempting to connect to Milvus at {host}:{port}...")
     try:
-        session = MilvusSession(host=os.getenv('MILVUS_HOST'), port=os.getenv('MILVUS_PORT'))
-        echo("✅ Successfully connected to Milvus")
+        # Convert port to string to match test expectations
+        session = MilvusSession(host=host, port=str(port), db_name=db_name)
+        session.connect()
+        echo(f"✅ Successfully connected to database '{db_name}'")
+        return 0
     except Exception as e:
-        echo(f"❌ Unable to connect to Milvus: {str(e)}", err=True)
+        echo(f"❌ Error connecting to database: {str(e)}", err=True)
         sys.exit(1)
 
 @db.command()
 def drop():
     """Drop all collections inside the database"""
-    session = MilvusSession(host=os.getenv('MILVUS_HOST'), port=os.getenv('MILVUS_PORT'))
+    session = MilvusSession(host=os.getenv('MILVUS_HOST', 'localhost'), port=os.getenv('MILVUS_PORT', '19530'))
 
     try:
         echo("🗑️ Dropping existing collections...")
         session.drop_all_collections()
         echo("✅ All collections dropped successfully!")
     except Exception as e:
-        echo(f"❌ Error dropping collections: {str(e)}", err=True)
+        echo(f"❌ Unable to drop collections: {str(e)}", err=True)
         sys.exit(1)
 
 @db.command()
 @click.option("--skip-embeddings/--with-embeddings", default=False, 
               help="Skip embedding generation (useful for development when rules haven't changed)")
-def seed(drop, skip_embeddings):
+def seed(skip_embeddings):
     """Seed the database with data from decorated classes"""
     pass
     # """Seed the database with initial game data."""
@@ -124,16 +128,3 @@ def seed(drop, skip_embeddings):
     # except Exception as e:
     #     echo(f"❌ Error seeding database: {str(e)}", err=True)
     #     sys.exit(1)
-
-@db.command()
-@click.option("--port", default=os.getenv("MILVUS_PORT", 19530), help="The port of the Milvus server")
-@click.option("--db-name", default=os.getenv("MILVUS_DB_NAME", "default"), help="The name of the Milvus database")
-@click.option("--host", default=os.getenv("MILVUS_HOST", "localhost"), help="The host of the Milvus server")
-def check(port, db_name, host):
-    """Check connection to the database and if it exists"""
-    try:
-        MilvusSession(port=port, db_name=db_name, host=host)
-        echo(f"✅ Successfully connected to database '{db_name}'")
-    except Exception as e:
-        echo(f"❌ Error connecting to database: {str(e)}", err=True)
-        sys.exit(1)

@@ -8,7 +8,7 @@ import time
 from pymilvus import Collection
 from dotenv import load_dotenv
 
-from ..util import create_millie_network, echo, run_docker_command
+from millie.cli.util import create_millie_network, echo, run_docker_command
 load_dotenv()
 
 @click.group()

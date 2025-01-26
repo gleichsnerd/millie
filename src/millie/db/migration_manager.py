@@ -12,7 +12,6 @@ from millie.db.schema_differ import SchemaDiffer
 from millie.db.schema_history import SchemaHistory
 from millie.orm.base_model import BaseModel
 from millie.schema.schema import Schema
-from sandbox.models.rule import RuleModel
 
 class MigrationManager:
     """Manages database migrations."""

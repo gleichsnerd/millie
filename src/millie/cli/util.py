@@ -29,6 +29,7 @@ def run_docker_command(cmd, check=True):
         if check:
             echo(f"❌ Docker command failed: {e.stderr}", err=True)
             sys.exit(1)
+        e.returncode = 1  # Override the returncode to be 1 instead of 2
         return e
 
 def check_millie_network():

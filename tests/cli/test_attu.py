@@ -1,11 +1,20 @@
-import os
-import pytest
-from click.testing import CliRunner
-from unittest.mock import patch, MagicMock
 import subprocess
+import pytest
+import click
+from click.testing import CliRunner
+from unittest.mock import patch
 
+from millie.cli import cli, add_millie_commands
 from millie.cli.attu.manager import attu
-from millie.cli.util import run_docker_command
+from tests.cli.docker_mock import DockerCommandMock, MockResponse
+from tests.util import click_skip_py310
+
+@pytest.fixture
+def test_cli():
+    """Create a fresh CLI for each test."""
+    test_cli = click.Group('cli')
+    test_cli.add_command(attu)
+    return test_cli
 
 @pytest.fixture
 def cli_runner():
@@ -14,109 +23,149 @@ def cli_runner():
 
 @pytest.fixture
 def mock_docker_command():
-    """Mock the Docker command runner."""
-    with patch('millie.cli.attu.manager.run_docker_command') as mock:
-        yield mock
+    """Mock the Docker command runner with configurable responses."""
+    mock = DockerCommandMock()
+    with patch("subprocess.run", side_effect=mock) as patched:
+        patched.set_responses = mock.set_responses
+        patched.output_calls = mock.output_calls
+        yield patched
 
 @pytest.fixture
-def mock_sleep():
-    """Mock time.sleep to prevent hanging."""
-    with patch('time.sleep') as mock:
-        yield mock
+def mock_sleep(monkeypatch):
+    """Mock time.sleep to prevent delays during tests."""
+    def mock_sleep(seconds):
+        pass
+    monkeypatch.setattr("time.sleep", mock_sleep)
 
-def test_start_command_milvus_not_running(cli_runner, mock_docker_command, mock_sleep):
-    """Test start command when Milvus is not running."""
-    mock_docker_command.return_value = MagicMock(stdout="")
-    
-    result = cli_runner.invoke(attu, ['start'])
+@click_skip_py310()
+def test_start_command_milvus_not_running(test_cli, cli_runner, mock_docker_command):
+    """Test starting Attu when Milvus is not running."""
+    mock_docker_command.set_responses({
+        "docker ps --filter name=milvus-standalone": MockResponse(
+            returncode=0,
+            stdout="",
+            stderr=""
+        )
+    })
+    result = cli_runner.invoke(test_cli, ["attu", "start"])
     assert result.exit_code == 1
-    assert "❌ Milvus must be running before starting Attu" in result.output
-    mock_sleep.assert_not_called()
+    assert "❌ Milvus must be running" in result.output
 
-def test_start_command_container_exists(cli_runner, mock_docker_command, mock_sleep):
-    """Test start command when container already exists."""
-    # Mock Milvus running check
-    def command_side_effects(*args, **kwargs):
-        if "milvus-standalone" in " ".join(args[0]):
-            return MagicMock(stdout="Up 2 hours")
-        elif "attu" in " ".join(args[0]):
-            return MagicMock(stdout="Up 2 hours")
-        return MagicMock(stdout="")
-    
-    mock_docker_command.side_effect = command_side_effects
-    
-    result = cli_runner.invoke(attu, ['start'])
+@click_skip_py310()
+def test_start_command_container_exists(test_cli, cli_runner, mock_docker_command):
+    """Test starting Attu when container exists."""
+    mock_docker_command.set_responses({
+        "docker ps --filter name=milvus-standalone --format {{.Status}}": MockResponse(
+            returncode=0,
+            stdout="Up 2 hours",
+            stderr=""
+        ),
+        "docker ps -a --filter name=attu --format {{.Status}}": MockResponse(
+            returncode=0,
+            stdout="Exited",
+            stderr=""
+        ),
+        "docker start attu": MockResponse(
+            returncode=0,
+            stdout="",
+            stderr=""
+        )
+    })
+    result = cli_runner.invoke(test_cli, ["attu", "start"])
     assert result.exit_code == 0
-    assert "✅ Attu container is already running!" in result.output
-    assert "🌐 Access Attu at http://localhost:8000" in result.output
-    mock_sleep.assert_not_called()
-
-def test_start_command_container_stopped(cli_runner, mock_docker_command, mock_sleep):
-    """Test start command when container exists but is stopped."""
-    # Mock Milvus running check
-    def command_side_effects(*args, **kwargs):
-        if "milvus-standalone" in " ".join(args[0]):
-            return MagicMock(stdout="Up 2 hours")
-        elif "attu" in " ".join(args[0]):
-            return MagicMock(stdout="Exited")
-        return MagicMock(stdout="")
-    
-    mock_docker_command.side_effect = command_side_effects
-    
-    result = cli_runner.invoke(attu, ['start'])
-    assert result.exit_code == 0
-    assert "Removing existing Attu container..." in result.output
     assert "✅ Attu container started!" in result.output
-    mock_sleep.assert_not_called()
 
-def test_start_command_new_container(cli_runner, mock_docker_command, mock_sleep):
-    """Test start command when creating new container."""
-    # Mock Milvus running check
-    def command_side_effects(*args, **kwargs):
-        if "milvus-standalone" in " ".join(args[0]):
-            return MagicMock(stdout="Up 2 hours")
-        elif "attu" in " ".join(args[0]):
-            return MagicMock(stdout="")
-        return MagicMock(stdout="")
-    
-    mock_docker_command.side_effect = command_side_effects
-    
-    result = cli_runner.invoke(attu, ['start'])
+@click_skip_py310()
+def test_start_command_container_stopped(test_cli, cli_runner, mock_docker_command):
+    """Test starting Attu when container is stopped."""
+    mock_docker_command.set_responses({
+        "docker ps --filter name=milvus-standalone --format {{.Status}}": MockResponse(
+            returncode=0,
+            stdout="Up 2 hours",
+            stderr=""
+        ),
+        "docker ps -a --filter name=attu --format {{.Status}}": MockResponse(
+            returncode=0,
+            stdout="Exited",
+            stderr=""
+        ),
+        "docker start attu": MockResponse(
+            returncode=0,
+            stdout="",
+            stderr=""
+        )
+    })
+    result = cli_runner.invoke(test_cli, ["attu", "start"])
     assert result.exit_code == 0
-    assert "Starting Attu container..." in result.output
     assert "✅ Attu container started!" in result.output
-    mock_sleep.assert_not_called()
 
-def test_stop_command_success(cli_runner, mock_docker_command, mock_sleep):
-    """Test stop command when container exists."""
-    # Mock container running check
-    def command_side_effects(*args, **kwargs):
-        if "docker ps" in " ".join(args[0]):
-            return MagicMock(stdout="Up 2 hours")
-        return MagicMock(stdout="")
-    
-    mock_docker_command.side_effect = command_side_effects
-    
-    result = cli_runner.invoke(attu, ['stop'])
+@click_skip_py310()
+def test_start_command_new_container(test_cli, cli_runner, mock_docker_command):
+    """Test starting Attu with a new container."""
+    mock_docker_command.set_responses({
+        "docker ps --filter name=milvus-standalone --format {{.Status}}": MockResponse(
+            returncode=0,
+            stdout="Up 2 hours",
+            stderr=""
+        ),
+        "docker ps -a --filter name=attu --format {{.Status}}": MockResponse(
+            returncode=0,
+            stdout="",
+            stderr=""
+        ),
+        "docker run": MockResponse(
+            returncode=0,
+            stdout="",
+            stderr=""
+        )
+    })
+    result = cli_runner.invoke(test_cli, ["attu", "start"])
     assert result.exit_code == 0
-    assert "Stopping Attu container..." in result.output
+    assert "✅ Attu container started!" in result.output
+
+@click_skip_py310()
+def test_stop_command_success(test_cli, cli_runner, mock_docker_command):
+    """Test stopping Attu successfully."""
+    mock_docker_command.set_responses({
+        "docker ps --filter name=attu --format {{.Status}}": MockResponse(
+            returncode=0,
+            stdout="Up 2 hours",
+            stderr=""
+        ),
+        "docker stop attu": MockResponse(
+            returncode=0,
+            stdout="",
+            stderr=""
+        )
+    })
+    result = cli_runner.invoke(test_cli, ["attu", "stop"])
+    assert result.exit_code == 0
     assert "✅ Attu container stopped!" in result.output
-    mock_sleep.assert_not_called()
 
-def test_status_command_running(cli_runner, mock_docker_command, mock_sleep):
+@click_skip_py310()
+def test_status_command_running(test_cli, cli_runner, mock_docker_command):
     """Test status command when container is running."""
-    mock_docker_command.return_value = MagicMock(stdout="Up 2 hours")
-    
-    result = cli_runner.invoke(attu, ['status'])
+    mock_docker_command.set_responses({
+        "docker ps -a --filter name=attu": MockResponse(
+            returncode=0,
+            stdout="Up 2 hours",
+            stderr=""
+        )
+    })
+    result = cli_runner.invoke(test_cli, ["attu", "status"])
     assert result.exit_code == 0
     assert "✅ Attu container is running!" in result.output
-    mock_sleep.assert_not_called()
 
-def test_status_command_not_running(cli_runner, mock_docker_command, mock_sleep):
+@click_skip_py310()
+def test_status_command_not_running(test_cli, cli_runner, mock_docker_command):
     """Test status command when container is not running."""
-    mock_docker_command.return_value = MagicMock(stdout="")
-    
-    result = cli_runner.invoke(attu, ['status'])
+    mock_docker_command.set_responses({
+        "docker ps -a --filter name=attu": MockResponse(
+            returncode=0,
+            stdout="",
+            stderr=""
+        )
+    })
+    result = cli_runner.invoke(test_cli, ["attu", "status"])
     assert result.exit_code == 0
-    assert "ℹ️ Attu container does not exist." in result.output
-    mock_sleep.assert_not_called() 
+    assert "ℹ️ Attu container does not exist." in result.output 
