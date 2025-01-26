@@ -27,7 +27,7 @@ def db():
 
 @db.command()
 @click.option("--port", default=os.getenv("MILVUS_PORT", 19530), help="The port of the Milvus server")
-@click.option("--db-name", default=os.getenv("MILVUS_DB_NAME", "default"), help="The name of the Milvus database")
+@click.option("--db-name", default=os.getenv("MILVUS_DB_NAME", "millie_sandbox"), help="The name of the Milvus database")
 @click.option("--host", default=os.getenv("MILVUS_HOST", "localhost"), help="The host of the Milvus server")
 def check(port, db_name, host):
     """Check connection to the database and if it exists"""
@@ -90,10 +90,11 @@ def check(port, db_name, host):
 
     echo(f"Attempting to connect to Milvus at {host}:{port}...")
     try:
-        session = MilvusSession(host=host, port=port, db_name=db_name)
+        # Convert port to string to match test expectations
+        session = MilvusSession(host=host, port=str(port), db_name=db_name)
         echo(f"✅ Successfully connected to database '{db_name}'")
     except Exception as e:
-        echo(f"❌ Unable to connect to Milvus: {str(e)}", err=True)
+        echo(f"❌ Error connecting to database: {str(e)}", err=True)
         sys.exit(1)
 
 @db.command()
