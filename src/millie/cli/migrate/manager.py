@@ -2,22 +2,13 @@
 import click
 import os
 import sys
-import subprocess
-from pathlib import Path
-import time
 from click import echo
-from pymilvus import Collection
 from dotenv import load_dotenv
-import json
-from datetime import datetime
 
 from millie.db.migration_history import MigrationHistoryModel
 from millie.db.session import MilvusSession
 from millie.db.schema_history import SchemaHistory
-from sandbox.models import RuleModel  # We'll make this more dynamic later
-from millie.db.schema_differ import SchemaDiffer
 from millie.db.migration_manager import MigrationManager
-from millie.db.migration_builder import MigrationBuilder
 load_dotenv()
 
 
