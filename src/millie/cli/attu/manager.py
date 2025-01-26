@@ -84,7 +84,9 @@ def start():
     # Start new Attu container
     echo("Starting Attu container...")
 
-    milvus_version = os.getenv('MILVUS_VERSION')
+    milvus_version = os.getenv('MILVUS_VERSION', '2.3.3')  # Default to 2.3.3 if not set
+    if not milvus_version:
+        milvus_version = '2.3.3'  # Double check in case empty string
     attu_version = 'latest'
     if milvus_version.startswith('2.4'):
         attu_version = 'v2.4'
