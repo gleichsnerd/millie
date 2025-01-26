@@ -1,0 +1,1 @@
+from .milvus_model import MilvusModel
