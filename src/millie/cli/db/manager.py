@@ -87,9 +87,9 @@ def check():
         echo("⚠️ Warning: Potential errors found in Milvus logs:")
         echo(logs_result.stderr)
 
-    echo(f"Attempting to connect to Milvus at {os.getenv('MILVUS_HOST')}:{os.getenv('MILVUS_PORT')}...")
+    echo(f"Attempting to connect to Milvus at {os.getenv('MILVUS_HOST')}:{os.getenv('MILVUS_PORT', '19530')}...")
     try:
-        session = MilvusSession(host=os.getenv('MILVUS_HOST'), port=os.getenv('MILVUS_PORT'))
+        session = MilvusSession(host=os.getenv('MILVUS_HOST'), port=os.getenv('MILVUS_PORT', '19530'))
         echo("✅ Successfully connected to Milvus")
     except Exception as e:
         echo(f"❌ Unable to connect to Milvus: {str(e)}", err=True)
@@ -98,14 +98,14 @@ def check():
 @db.command()
 def drop():
     """Drop all collections inside the database"""
-    session = MilvusSession(host=os.getenv('MILVUS_HOST'), port=os.getenv('MILVUS_PORT'))
+    session = MilvusSession(host=os.getenv('MILVUS_HOST', 'localhost'), port=os.getenv('MILVUS_PORT', '19530'))
 
     try:
         echo("🗑️ Dropping existing collections...")
         session.drop_all_collections()
         echo("✅ All collections dropped successfully!")
     except Exception as e:
-        echo(f"❌ Error dropping collections: {str(e)}", err=True)
+        echo(f"❌ Unable to drop collections: {str(e)}", err=True)
         sys.exit(1)
 
 @db.command()
