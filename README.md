@@ -1,6 +1,7 @@
 # Millie, an ORM-esque library for Milvus and Python
 
 [![Tests](https://github.com/gleichsnerd/millie/actions/workflows/test.yml/badge.svg)](https://github.com/gleichsnerd/millie/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/gleichsnerd/millie/branch/main/graph/badge.svg)](https://codecov.io/gh/gleichsnerd/millie)
 
 *Users beware: Millie is currently in a very early stage of development. It is not yet ready for production use.*
 
