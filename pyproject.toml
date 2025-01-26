@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "millie"
+version = "0.1.0"
+description = "A Python package for managing Milvus locally and in the cloud"
+authors = [
+    { name = "Gleichsnerd", email = "gleichsnerd@gmail.com" }
+]
+dependencies = [
+    "click>=8.1.7",
+    "pymilvus>=2.3.6",
+    "docker>=7.0.0",
+    "typeguard>=4.4.1",
+    "rich>=13.7.1",
+]
+
+[project.scripts]
+millie = "millie.cli.router:cli"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0",
+    "pytest-cov>=6.0.0"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v"
