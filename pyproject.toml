@@ -6,9 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "millie"
 version = "0.1.0"
 description = "An ORM-esque interface for Milvus"
-requires-python = ">=3.6"
+requires-python = ">=3.9"
 authors = [
-    { name = "Gleichsnerd", email = "gleichsnerd@gmail.com" }
+    { name = "River Gleichsner", email = "gleichsnerd@gmail.com" }
 ]
 dependencies = [
     "click>=8.1.7",
@@ -16,18 +16,37 @@ dependencies = [
     "docker>=7.0.0",
     "typeguard>=4.4.1",
     "rich>=13.7.1",
+    "python-dotenv",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
 ]
 
+[project.urls]
+Homepage = "https://github.com/gleichsnerd/millie"
+Repository = "https://github.com/gleichsnerd/millie.git"
+
 [project.scripts]
-millie = "millie.cli.router:cli"
+millie = "millie.cli:cli"
 
 [project.optional-dependencies]
-test = [
+dev = [
     "pytest>=8.0.0",
-    "pytest-cov>=6.0.0"
+    "pytest-cov>=6.0.0",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v"
+markers = [
+    "integration: marks tests that require a running Milvus instance",
+]
