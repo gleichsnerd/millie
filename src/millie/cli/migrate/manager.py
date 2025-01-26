@@ -31,16 +31,20 @@ def enforce_migration_table():
 @migrate.command()
 def init():
     """Initialize the migration history table."""
-    session = MilvusSession(host=os.getenv("MILVUS_HOST"), port=os.getenv("MILVUS_PORT"))
-    if check_migration_table():
-        echo("✅ Migration history table already exists.")
-    else:
-        echo("🤖Creating migration history table")
-        session.init_collection(MigrationHistoryModel)
-        # session.load_collection(MigrationHistoryModel)
-        echo("✅ Migration history table created.")
-    
-    session.unload_collection(MigrationHistoryModel)
+    try:
+        session = MilvusSession(host=os.getenv("MILVUS_HOST"), port=os.getenv("MILVUS_PORT"))
+        if check_migration_table():
+            echo("✅ Migration history table already exists.")
+        else:
+            echo("🤖Creating migration history table")
+            session.init_collection(MigrationHistoryModel)
+            # session.load_collection(MigrationHistoryModel)
+            echo("✅ Migration history table created.")
+        
+        session.unload_collection(MigrationHistoryModel)
+    except Exception as e:
+        echo(f"❌ Error connecting to database: {str(e)}", err=True)
+        sys.exit(1)
 
 @migrate.group()
 def schema_history():

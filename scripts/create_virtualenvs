@@ -1,0 +1,68 @@
+#!/bin/bash
+
+# Exit on error
+set -e
+
+# Check if pyenv is installed
+if ! command -v pyenv &> /dev/null; then
+    echo "Installing pyenv..."
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS installation
+        brew install pyenv
+    else
+        # Linux installation
+        curl https://pyenv.run | bash
+        
+        # Add pyenv to PATH and initialize
+        echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.bashrc
+        echo 'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.bashrc
+        echo 'eval "$(pyenv init -)"' >> ~/.bashrc
+        
+        # Also add to zshrc if it exists
+        if [ -f ~/.zshrc ]; then
+            echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.zshrc
+            echo 'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.zshrc
+            echo 'eval "$(pyenv init -)"' >> ~/.zshrc
+        fi
+        
+        # Reload shell configuration
+        source ~/.bashrc
+    fi
+fi
+
+# Install Python versions
+echo "Installing Python versions..."
+for version in 3.10 3.11 3.12 3.13; do
+    if ! pyenv versions | grep -q $version; then
+        echo "Installing Python $version..."
+        pyenv install $version
+    else
+        echo "Python $version already installed"
+    fi
+done
+
+export PYENV_ROOT="$HOME/.pyenv"
+[[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init -)"
+
+# Create virtualenvs
+echo "Creating virtualenvs..."
+for version in 3.10 3.11 3.12 3.13; do
+    short_version=$(echo $version | cut -d. -f1-2)
+    venv_name="venv${short_version//./}"
+    
+    echo "Setting up $venv_name..."
+    pyenv shell $version
+    python -m pip install --upgrade pip
+    python -m pip install virtualenv
+    
+    if [ ! -d "$venv_name" ]; then
+        python -m virtualenv $venv_name
+    else
+        echo "Virtualenv $venv_name already exists"
+    fi
+done
+
+echo "All Python environments have been set up!"
+echo "You can activate them using: source venv<version>/bin/activate"
+echo "For example: source venv310/bin/activate" 

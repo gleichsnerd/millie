@@ -92,7 +92,9 @@ def check(port, db_name, host):
     try:
         # Convert port to string to match test expectations
         session = MilvusSession(host=host, port=str(port), db_name=db_name)
+        session.connect()
         echo(f"✅ Successfully connected to database '{db_name}'")
+        return 0
     except Exception as e:
         echo(f"❌ Error connecting to database: {str(e)}", err=True)
         sys.exit(1)

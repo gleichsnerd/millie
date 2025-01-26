@@ -28,5 +28,7 @@ def add_millie_commands(cli):
     cli.add_command(migrate)
     return cli
 
+add_millie_commands(cli)
+
 if __name__ == "__main__":
     cli()
