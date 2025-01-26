@@ -5,7 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "millie"
 version = "0.1.0"
-description = "A Python package for managing Milvus locally and in the cloud"
+description = "An ORM-esque interface for Milvus"
+dynamic = ["requires-python"]
+requires-python = ">=3.6"
 authors = [
     { name = "Gleichsnerd", email = "gleichsnerd@gmail.com" }
 ]
