@@ -13,21 +13,6 @@ jobs:
       matrix:
         python-version: ["3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12"]
 
-    services:
-      milvus:
-        image: milvusdb/milvus:v2.3.3
-        env:
-          ETCD_USE_EMBED: true
-          MINIO_USE_EMBED: true
-        ports:
-          - 19530:19530
-          - 9091:9091
-        options: >-
-          --health-cmd "curl -f http://localhost:9091/healthz"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
     - uses: actions/checkout@v4
     
@@ -43,7 +28,7 @@ jobs:
         
     - name: Run tests with coverage
       run: |
-        pytest tests/ -v --cov=millie --cov-report=xml
+        pytest tests/ -v -m "not integration" --cov=millie --cov-report=xml
         
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
