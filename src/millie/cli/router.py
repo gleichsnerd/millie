@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
 import click
-from pathlib import Path
-from click import echo
-from pymilvus import Collection
 from dotenv import load_dotenv
 
 from .milvus import milvus
@@ -10,11 +7,6 @@ from .attu import attu
 from .db import db
 from .migrate import migrate
 load_dotenv()
-
-# from ..ai.rag_manager import RAGManager
-# from ..config.rag_config import RAGConfig, get_env_var
-# from ..db.session import MilvusSession
-# from ..schema.migration_manager import MigrationManager
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 def cli():
@@ -34,8 +26,7 @@ def add_millie_commands(cli):
     cli.add_command(attu)
     cli.add_command(db)
     cli.add_command(migrate)
-
-add_millie_commands(cli)
+    return cli
 
 if __name__ == "__main__":
     cli()
