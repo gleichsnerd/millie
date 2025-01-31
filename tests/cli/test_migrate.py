@@ -165,4 +165,33 @@ def test_init_command_db_connection_error(test_cli, cli_runner, mock_session):
     with patch('millie.cli.migrate.manager.check_migration_table', side_effect=Exception(error_msg)):
         result = cli_runner.invoke(test_cli, ["migrate", "init"])
         assert result.exit_code == 1
-        assert f"❌ Error connecting to database: {error_msg}" in result.output 
+        assert f"❌ Error connecting to database: {error_msg}" in result.output
+
+@click_skip_py310()
+def test_create_command_no_migration_generated(test_cli, cli_runner, mock_migration_manager):
+    """Test creating a migration when changes detected but no migration generated."""
+    changes = {
+        "TestModel": {
+            "added": [SchemaField(name="new_field", dtype="VARCHAR")],
+            "removed": [],
+            "modified": []
+        }
+    }
+    mock_migration_manager.return_value.detect_changes.return_value = changes
+    mock_migration_manager.return_value.generate_migration.return_value = None
+    
+    with patch('millie.cli.migrate.manager.check_migration_table', return_value=True):
+        result = cli_runner.invoke(test_cli, ["migrate", "create", "test"])
+        assert result.exit_code == 0
+        assert "No migration created." in result.output
+
+@click_skip_py310()
+def test_create_command_error(test_cli, cli_runner, mock_migration_manager):
+    """Test creating a migration when an error occurs."""
+    error_msg = "Failed to create migration"
+    mock_migration_manager.return_value.detect_changes.side_effect = Exception(error_msg)
+    
+    with patch('millie.cli.migrate.manager.check_migration_table', return_value=True):
+        result = cli_runner.invoke(test_cli, ["migrate", "create", "test"])
+        assert result.exit_code == 1
+        assert f"❌ Error creating migration: {error_msg}" in result.output 
