@@ -123,20 +123,3 @@ def create(name: str):
     except Exception as e:
         echo(f"❌ Error creating migration: {str(e)}", err=True)
         sys.exit(1)
-
-# @migrate.command()
-# def run():
-#     """Run all pending migrations."""
-#     try:
-#         from ..schema.migration_manager import MigrationManager
-#         from ..config.rag_config import RAGConfig
-
-#         config = RAGConfig()
-#         manager = MigrationManager(config)
-#         manager.run_migrations()
-#         echo("✅ Successfully ran migrations")
-#     except Exception as e:
-#         echo(f"❌ Error running migrations: {str(e)}", err=True)
-#         sys.exit(1)
-
-

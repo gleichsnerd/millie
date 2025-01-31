@@ -7,7 +7,6 @@ from unittest.mock import patch
 from millie.cli import cli, add_millie_commands
 from millie.cli.attu.manager import attu
 from tests.cli.docker_mock import DockerCommandMock, MockResponse
-from tests.util import click_skip_py310
 
 @pytest.fixture
 def test_cli():
@@ -37,7 +36,6 @@ def mock_sleep(monkeypatch):
         pass
     monkeypatch.setattr("time.sleep", mock_sleep)
 
-@click_skip_py310()
 def test_start_command_milvus_not_running(test_cli, cli_runner, mock_docker_command):
     """Test starting Attu when Milvus is not running."""
     mock_docker_command.set_responses({
@@ -51,7 +49,6 @@ def test_start_command_milvus_not_running(test_cli, cli_runner, mock_docker_comm
     assert result.exit_code == 1
     assert "❌ Milvus must be running" in result.output
 
-@click_skip_py310()
 def test_start_command_container_exists(test_cli, cli_runner, mock_docker_command):
     """Test starting Attu when container exists."""
     mock_docker_command.set_responses({
@@ -75,7 +72,6 @@ def test_start_command_container_exists(test_cli, cli_runner, mock_docker_comman
     assert result.exit_code == 0
     assert "✅ Attu container started!" in result.output
 
-@click_skip_py310()
 def test_start_command_container_stopped(test_cli, cli_runner, mock_docker_command):
     """Test starting Attu when container is stopped."""
     mock_docker_command.set_responses({
@@ -99,7 +95,6 @@ def test_start_command_container_stopped(test_cli, cli_runner, mock_docker_comma
     assert result.exit_code == 0
     assert "✅ Attu container started!" in result.output
 
-@click_skip_py310()
 def test_start_command_new_container(test_cli, cli_runner, mock_docker_command):
     """Test starting Attu with a new container."""
     mock_docker_command.set_responses({
@@ -123,7 +118,6 @@ def test_start_command_new_container(test_cli, cli_runner, mock_docker_command):
     assert result.exit_code == 0
     assert "✅ Attu container started!" in result.output
 
-@click_skip_py310()
 def test_stop_command_success(test_cli, cli_runner, mock_docker_command):
     """Test stopping Attu successfully."""
     mock_docker_command.set_responses({
@@ -142,7 +136,6 @@ def test_stop_command_success(test_cli, cli_runner, mock_docker_command):
     assert result.exit_code == 0
     assert "✅ Attu container stopped!" in result.output
 
-@click_skip_py310()
 def test_status_command_running(test_cli, cli_runner, mock_docker_command):
     """Test status command when container is running."""
     mock_docker_command.set_responses({
@@ -156,7 +149,6 @@ def test_status_command_running(test_cli, cli_runner, mock_docker_command):
     assert result.exit_code == 0
     assert "✅ Attu container is running!" in result.output
 
-@click_skip_py310()
 def test_status_command_not_running(test_cli, cli_runner, mock_docker_command):
     """Test status command when container is not running."""
     mock_docker_command.set_responses({

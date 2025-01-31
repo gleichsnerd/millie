@@ -50,7 +50,7 @@ def mock_env_vars(monkeypatch):
     monkeypatch.setenv("MILVUS_PORT", "19530")
     monkeypatch.setenv("MILVUS_VERSION", "2.3.3")
 
-@click_skip_py310()
+
 def test_start_command_docker_not_running(test_cli, cli_runner, mock_docker_command):
     """Test start command when Docker is not running."""
     mock_docker_command.set_responses({
@@ -65,7 +65,7 @@ def test_start_command_docker_not_running(test_cli, cli_runner, mock_docker_comm
     assert result.exit_code == 1
     assert "Docker is not running" in result.output
 
-@click_skip_py310()
+
 def test_start_command_container_exists(test_cli, cli_runner, mock_docker_command):
     """Test starting Milvus when container exists and is running."""
     mock_docker_command.set_responses({
@@ -87,7 +87,7 @@ def test_start_command_container_exists(test_cli, cli_runner, mock_docker_comman
     assert result.exit_code == 0
     assert "✅ Milvus container is already running!" in result.output
 
-@click_skip_py310()
+
 def test_start_command_container_stopped(test_cli, cli_runner, mock_docker_command):
     """Test starting Milvus when container is stopped."""
     mock_docker_command.set_responses({
@@ -116,7 +116,7 @@ def test_start_command_container_stopped(test_cli, cli_runner, mock_docker_comma
     assert "Starting existing Milvus container..." in result.output
     assert "✅ Milvus container started!" in result.output
 
-@click_skip_py310()
+
 def test_start_command_new_container(test_cli, cli_runner, mock_docker_command, mock_sleep):
     
     """Test starting Milvus with a new container."""
@@ -164,7 +164,7 @@ def test_start_command_new_container(test_cli, cli_runner, mock_docker_command, 
     assert "Starting Milvus in standalone mode..." in result.output
     assert "✅ Milvus container started!" in result.output
 
-@click_skip_py310()
+
 def test_stop_command_success(test_cli, cli_runner, mock_docker_command):
     """Test stopping Milvus successfully."""
     mock_docker_command.set_responses({
@@ -186,7 +186,7 @@ def test_stop_command_success(test_cli, cli_runner, mock_docker_command):
     assert result.exit_code == 0
     assert "✅ Milvus container stopped!" in result.output
 
-@click_skip_py310()
+
 def test_status_command_running(test_cli, cli_runner, mock_docker_command):
     """Test checking Milvus status when running."""
     mock_docker_command.set_responses({
@@ -202,7 +202,7 @@ def test_status_command_running(test_cli, cli_runner, mock_docker_command):
     assert result.exit_code == 0
     assert "✅ Milvus container is running!" in result.output
 
-@click_skip_py310()
+
 def test_status_command_not_running(test_cli, cli_runner, mock_docker_command):
     """Test checking Milvus status when not running."""
     mock_docker_command.set_responses({
