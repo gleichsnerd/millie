@@ -1,13 +1,13 @@
 """
 initial_schema
 
-Revision ID: 20250206_123443_initial_schema
-Created at: 2025-02-06T12:34:43.711745
+Revision ID: 20250206_131131_initial_schema
+Created at: 2025-02-06T13:11:31.404509
 """
 from pymilvus import Collection, FieldSchema, DataType, CollectionSchema
 from millie.db.migration import Migration
 
-class Migration_20250206_123443_initial_schema(Migration):
+class Migration_20250206_131131_initial_schema(Migration):
     """Migration for initial_schema."""
 
     def up(self):
