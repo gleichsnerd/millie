@@ -4,16 +4,15 @@ from dataclasses import dataclass
 from pymilvus import FieldSchema, DataType
 
 from millie.db.migration_manager import MigrationManager
-from millie.orm.base_model import BaseModel
+from millie.orm.milvus_model import MilvusModel
+from millie.orm.fields import field
 from millie.orm.milvus_model import MilvusModel
 
 # Test Models
-@dataclass
-class SimpleModel:
+class SimpleModel(MilvusModel):
     field1: str
     field2: int
 
-@MilvusModel()
 class TestModel(SimpleModel):
     @classmethod
     def collection_name(cls):
@@ -31,7 +30,7 @@ class TestModel(SimpleModel):
 class MixinClass:
     pass
 
-class MultiInheritanceModel(BaseModel, MixinClass):
+class MultiInheritanceModel(MilvusModel, MixinClass):
     pass
 
 # Fixtures
@@ -60,25 +59,52 @@ def test_module(tmp_path):
     module_path = tmp_path / "test_models.py"
     module_content = '''
 from dataclasses import dataclass
-from millie.orm.base_model import BaseModel
+from pymilvus import DataType, FieldSchema
 from millie.orm.milvus_model import MilvusModel
 
-@dataclass
-class SimpleModel:
+class SimpleModel(MilvusModel):
     field1: str
     field2: int
+    
+    @classmethod
+    def collection_name(cls) -> str:
+        return "simple"
+        
+    @classmethod
+    def schema(cls) -> dict:
+        return {
+            "fields": [
+                FieldSchema("id", DataType.VARCHAR, max_length=100, is_primary=True),
+                FieldSchema("field1", DataType.VARCHAR, max_length=100),
+                FieldSchema("field2", DataType.INT64)
+            ]
+        }
 
-@MilvusModel()
 class TestModel(SimpleModel):
-    pass
+    @classmethod
+    def collection_name(cls) -> str:
+        return "test"
 
 class MixinClass:
     pass
 
-class MultiInheritanceModel(BaseModel, MixinClass):
-    pass
+class MultiInheritanceModel(MilvusModel, MixinClass):
+    field: str
+    
+    @classmethod
+    def collection_name(cls) -> str:
+        return "multi"
+        
+    @classmethod
+    def schema(cls) -> dict:
+        return {
+            "fields": [
+                FieldSchema("id", DataType.VARCHAR, max_length=100, is_primary=True),
+                FieldSchema("field", DataType.VARCHAR, max_length=100)
+            ]
+        }
 
-class NonBaseModel:
+class NonMilvusModel:
     pass
 '''
     module_path.write_text(module_content)
@@ -87,14 +113,16 @@ class NonBaseModel:
 @pytest.fixture
 def test_model():
     """Create a test model for schema change detection."""
-    @MilvusModel()
-    class TestModel:
+    class TestModel(MilvusModel):
+        id: str
+        name: str
+
         @classmethod
-        def collection_name(cls):
+        def collection_name(cls) -> str:
             return "test_collection"
         
         @classmethod
-        def schema(cls):
+        def schema(cls) -> dict:
             return {
                 "fields": [
                     FieldSchema("id", DataType.VARCHAR, max_length=100, is_primary=True),
@@ -105,14 +133,15 @@ def test_model():
 
 # Model Discovery Tests
 def test_find_all_models(test_module):
-    """Test finding all models that inherit from BaseModel."""
+    """Test finding all models that inherit from MilvusModel."""
     os.environ['MILLIE_MODEL_GLOB'] = str(test_module)
     manager = MigrationManager()
     
     models = manager._find_all_models()
     
-    assert len(models) == 2
+    assert len(models) == 3
     model_names = {model.__name__ for model in models}
+    assert "SimpleModel" in model_names
     assert "TestModel" in model_names
     assert "MultiInheritanceModel" in model_names
     
@@ -158,16 +187,15 @@ def test_generate_migration_file(manager, test_model):
 
 def test_migration_with_field_changes(manager):
     """Test migration generation with field changes."""
-    @MilvusModel()
-    class ChangeModel:
+    class ChangeModel(MilvusModel):
         id: str
         
         @classmethod
-        def collection_name(cls):
+        def collection_name(cls) -> str:
             return "change_collection"
         
         @classmethod
-        def schema(cls):
+        def schema(cls) -> dict:
             return {
                 "fields": [
                     FieldSchema("id", DataType.VARCHAR, max_length=100, is_primary=True)
@@ -177,17 +205,16 @@ def test_migration_with_field_changes(manager):
     changes = manager.detect_changes_for_model(ChangeModel)
     migration_path = manager.generate_migration("initial", ChangeModel)
     
-    @MilvusModel()
-    class ChangeModel:
+    class ChangeModel(MilvusModel):
         id: str
         description: str
         
         @classmethod
-        def collection_name(cls):
+        def collection_name(cls) -> str:
             return "change_collection"
         
         @classmethod
-        def schema(cls):
+        def schema(cls) -> dict:
             return {
                 "fields": [
                     FieldSchema("id", DataType.VARCHAR, max_length=100, is_primary=True),
@@ -209,17 +236,16 @@ def test_migration_with_field_changes(manager):
 
 def test_migration_with_field_removal(manager):
     """Test migration generation when removing fields."""
-    @MilvusModel()
-    class RemoveModel:
+    class RemoveModel(MilvusModel):
         id: str
         temp: str
         
         @classmethod
-        def collection_name(cls):
+        def collection_name(cls) -> str:
             return "remove_collection"
         
         @classmethod
-        def schema(cls):
+        def schema(cls) -> dict:
             return {
                 "fields": [
                     FieldSchema("id", DataType.VARCHAR, max_length=100, is_primary=True),
@@ -230,16 +256,15 @@ def test_migration_with_field_removal(manager):
     changes = manager.detect_changes_for_model(RemoveModel)
     migration_path = manager.generate_migration("initial", RemoveModel)
     
-    @MilvusModel()
-    class RemoveModel:
+    class RemoveModel(MilvusModel):
         id: str
         
         @classmethod
-        def collection_name(cls):
+        def collection_name(cls) -> str:
             return "remove_collection"
         
         @classmethod
-        def schema(cls):
+        def schema(cls) -> dict:
             return {
                 "fields": [
                     FieldSchema("id", DataType.VARCHAR, max_length=100, is_primary=True)
@@ -259,18 +284,17 @@ def test_migration_with_field_removal(manager):
 
 def test_field_modifications(manager):
     """Test migration generation for various field modifications."""
-    @MilvusModel()
-    class ModifyModel:
+    class ModifyModel(MilvusModel):
         id: str
         name: str
         vector: list
         
         @classmethod
-        def collection_name(cls):
+        def collection_name(cls) -> str:
             return "modify_collection"
         
         @classmethod
-        def schema(cls):
+        def schema(cls) -> dict:
             return {
                 "fields": [
                     FieldSchema("id", DataType.VARCHAR, max_length=36, is_primary=True),
@@ -282,18 +306,17 @@ def test_field_modifications(manager):
     changes = manager.detect_changes_for_model(ModifyModel)
     migration_path = manager.generate_migration("initial", ModifyModel)
     
-    @MilvusModel()
-    class ModifyModel:
+    class ModifyModel(MilvusModel):
         id: str
         name: int
         vector: list
         
         @classmethod
-        def collection_name(cls):
+        def collection_name(cls) -> str:
             return "modify_collection"
         
         @classmethod
-        def schema(cls):
+        def schema(cls) -> dict:
             return {
                 "fields": [
                     FieldSchema("id", DataType.VARCHAR, max_length=50, is_primary=True),

@@ -7,9 +7,9 @@ from pymilvus import FieldSchema, DataType
 
 from millie.cli.router import cli, add_millie_commands
 from millie.db.migration_history import MigrationHistoryModel
-from millie.schema.schema import Schema, SchemaField
+from millie.db.schema import Schema, SchemaField
 from millie.db.schema_history import SchemaHistory
-from millie.orm.base_model import BaseModel
+from millie.orm.milvus_model import MilvusModel
 from millie.orm import MilvusModel
 from tests.util import click_skip_py310
 
@@ -194,4 +194,48 @@ def test_create_command_error(test_cli, cli_runner, mock_migration_manager):
     with patch('millie.cli.migrate.manager.check_migration_table', return_value=True):
         result = cli_runner.invoke(test_cli, ["migrate", "create", "test"])
         assert result.exit_code == 1
-        assert f"❌ Error creating migration: {error_msg}" in result.output 
+        assert f"❌ Error creating migration: {error_msg}" in result.output
+
+@click_skip_py310()
+def test_run_command_no_migrations(test_cli, cli_runner, mock_migration_manager):
+    """Test running migrations when there are no pending migrations."""
+    mock_migration_manager.return_value.run_migrations.return_value = []
+    
+    with patch('millie.cli.migrate.manager.check_migration_table', return_value=True):
+        result = cli_runner.invoke(test_cli, ["migrate", "run"])
+        assert result.exit_code == 0
+        assert "No pending migrations to run." in result.output
+
+@click_skip_py310()
+def test_run_command_with_migrations(test_cli, cli_runner, mock_migration_manager):
+    """Test running migrations when there are pending migrations."""
+    mock_migration_manager.return_value.run_migrations.return_value = [
+        "schema/migrations/20240101_000000_test1.py",
+        "schema/migrations/20240101_000001_test2.py"
+    ]
+    
+    with patch('millie.cli.migrate.manager.check_migration_table', return_value=True):
+        result = cli_runner.invoke(test_cli, ["migrate", "run"])
+        assert result.exit_code == 0
+        assert "✅ Applied migration: 20240101_000000_test1.py" in result.output
+        assert "✅ Applied migration: 20240101_000001_test2.py" in result.output
+        assert "✅ Successfully ran all migrations" in result.output
+
+@click_skip_py310()
+def test_run_command_error(test_cli, cli_runner, mock_migration_manager):
+    """Test running migrations when an error occurs."""
+    error_msg = "Failed to run migrations"
+    mock_migration_manager.return_value.run_migrations.side_effect = Exception(error_msg)
+    
+    with patch('millie.cli.migrate.manager.check_migration_table', return_value=True):
+        result = cli_runner.invoke(test_cli, ["migrate", "run"])
+        assert result.exit_code == 1
+        assert f"❌ Error running migrations: {error_msg}" in result.output
+
+@click_skip_py310()
+def test_run_command_no_migration_table(test_cli, cli_runner, mock_migration_manager):
+    """Test running migrations when migration table doesn't exist."""
+    with patch('millie.cli.migrate.manager.check_migration_table', return_value=False):
+        result = cli_runner.invoke(test_cli, ["migrate", "run"])
+        assert result.exit_code == 1
+        assert "❌ Migration history table not found" in result.output 
