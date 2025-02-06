@@ -6,6 +6,7 @@ from .milvus import milvus
 from .attu import attu
 from .db import db
 from .migrate import migrate
+from .embeddings import embeddings
 load_dotenv()
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
@@ -26,9 +27,10 @@ def add_millie_commands(cli):
     cli.add_command(attu)
     cli.add_command(db)
     cli.add_command(migrate)
+    cli.add_command(embeddings)
     return cli
 
-add_millie_commands(cli)
+cli = add_millie_commands(cli)
 
 if __name__ == "__main__":
     cli()

@@ -3,18 +3,18 @@ from typing import Type, List, Dict, Optional, TypeVar
 from pymilvus import Collection, connections, CollectionSchema, FieldSchema, DataType, utility
 import logging
 
-from millie.orm.base_model import BaseModel
+from millie.orm.milvus_model import MilvusModel
 from dotenv import load_dotenv
 
 load_dotenv()
 
-T = TypeVar('T', bound=BaseModel)
+T = TypeVar('T', bound=MilvusModel)
 logger = logging.getLogger(__name__)
 
 class MilvusSession:
     """Manages Milvus database operations."""
     
-    def __init__(self, host: str = os.getenv('MILVUS_HOST'), port: int = os.getenv('MILVUS_PORT'), db_name: str = os.getenv('MILVUS_DB_NAME', 'default')):
+    def __init__(self, host: str = os.getenv('MILVUS_HOST', 'localhost'), port: int = int(os.getenv('MILVUS_PORT', 19530)), db_name: str = os.getenv('MILVUS_DB_NAME', 'default')):
         self.host = host
         self.port = port
         self.db_name = db_name
@@ -34,7 +34,7 @@ class MilvusSession:
             logger.error(f"Failed to connect to Milvus at {self.host}:{self.port}: {str(e)}")
             raise
 
-    def init_collection(self, collection: BaseModel):
+    def init_collection(self, collection: MilvusModel):
         """Initialize all collections for registered models."""
         logger.info(f"Initializing collection {collection.collection_name()}...")
         
@@ -45,7 +45,7 @@ class MilvusSession:
             logger.error(f"Failed to initialize collection for {collection.collection_name()}: {str(e)}")
             raise
     
-    def load_collection(self, collection: BaseModel):
+    def load_collection(self, collection: MilvusModel):
         """Load a collection."""
         logger.info(f"Loading collection {collection.collection_name()}...")
         try:
@@ -57,7 +57,7 @@ class MilvusSession:
             logger.error(f"Failed to load collection for {collection.collection_name()}: {str(e)}")
             raise
 
-    def unload_collection(self, collection: BaseModel):
+    def unload_collection(self, collection: MilvusModel):
         """Unload a collection."""
         logger.info(f"Unloading collection {collection.collection_name()}...")
         try:
@@ -70,10 +70,13 @@ class MilvusSession:
             logger.error(f"Failed to unload collection for {collection.collection_name()}: {str(e)}")
             raise
 
-    def collection_exists(self, collection_name: str) -> bool:
+    def collection_exists(self, model_class: Type[T]) -> bool:
         """Check if a collection exists."""
-        return utility.has_collection(collection_name)
+        return utility.has_collection(model_class.collection_name())
     
+    def collection(self, model_class: Type[T]) -> Collection:
+        return self.get_milvus_collection(model_class)
+
     def get_milvus_collection(self, model_class: Type[T]) -> Collection:
         """Get or create collection for model."""
         collection_name = model_class.collection_name()
@@ -221,7 +224,7 @@ class MilvusSession:
             collection.release()
         connections.disconnect("default")
     
-    def load_relationships(self, model: BaseModel):
+    def load_relationships(self, model: MilvusModel):
         """Load related models for a model instance."""
         for field, related_model_name in model.relationships.items():
             # Import the related model class dynamically to avoid circular imports
@@ -245,7 +248,7 @@ class MilvusSession:
                 if results:
                     setattr(model, field, results[0])
     
-    def save_relationships(self, model: BaseModel):
+    def save_relationships(self, model: MilvusModel):
         """Save related models for a model instance."""
         for field, _ in model.relationships.items():
             related_data = getattr(model, field)

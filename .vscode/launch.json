@@ -38,7 +38,23 @@
             "module": "millie",
             "args": [
                 "migrate",
-                "create"
+                "create",
+                "vs_code_task"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Millie: Seed Data",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "millie",
+            "args": [
+                "db",
+                "seed"
             ],
             "console": "integratedTerminal",
             "justMyCode": false,

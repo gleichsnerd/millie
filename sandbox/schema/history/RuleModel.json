@@ -32,15 +32,10 @@
       {
         "name": "metadata",
         "dtype": "JSON"
-      },
-      {
-        "name": "test_field",
-        "dtype": "VARCHAR",
-        "max_length": 1000
       }
     ]
   },
   "is_migration_collection": false,
-  "version": 2,
-  "updated_at": "2025-01-26T02:37:04.555887"
+  "version": 7,
+  "updated_at": "2025-02-06T12:37:21.019634"
 }

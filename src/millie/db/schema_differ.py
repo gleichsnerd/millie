@@ -1,7 +1,7 @@
 import logging
 from typing import List, Dict, Set, Type, Tuple, Any
-from millie.orm.base_model import BaseModel
-from millie.schema.schema import Schema
+from millie.orm.milvus_model import MilvusModel
+from millie.db.schema import Schema, SchemaField
 
 
 # Configure logging
@@ -12,88 +12,60 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class SchemaDiffer:
-    """Compares schema versions to detect changes."""
-    
-    @staticmethod
-    def find_schema_changes(old_schema: Schema, new_schema: Schema) -> Dict[str, List]:
-        """Compare two schemas and return differences."""
-        old_fields = {f.name: f for f in old_schema.fields}
-        new_fields = {f.name: f for f in new_schema.fields}
-        
+    """Utility class to find differences between schemas."""
+
+    def diff_schemas(self, old_schema: Schema, new_schema: Schema) -> Dict[str, List[SchemaField]]:
+        """Compare two schemas and return the differences."""
         changes = {
             "added": [],
             "removed": [],
             "modified": []
         }
-        
-        # Find added and modified fields
+
+        # If old_schema is None, treat all fields as added
+        if old_schema is None:
+            for field in new_schema.fields:
+                if field.name not in ['embedding', 'metadata']:
+                    changes["added"].append(field)
+            return changes
+
+        old_fields = {f.name: f for f in old_schema.fields}
+        new_fields = {f.name: f for f in new_schema.fields}
+
+        # Find added fields
         for name, field in new_fields.items():
-            if name not in old_fields:
+            if name not in old_fields and name not in ['embedding', 'metadata']:
                 changes["added"].append(field)
-            elif SchemaDiffer._field_changed(old_fields[name], field):
-                changes["modified"].append((old_fields[name], field))
-        
+
         # Find removed fields
-        for name in old_fields:
-            if name not in new_fields:
-                changes["removed"].append(old_fields[name])
-        
+        for name, field in old_fields.items():
+            if name not in new_fields and name not in ['embedding', 'metadata', 'id']:
+                changes["removed"].append(field)
+
+        # Find modified fields
+        for name, new_field in new_fields.items():
+            if name in old_fields:
+                old_field = old_fields[name]
+                if self._is_field_modified(old_field, new_field):
+                    changes["modified"].append((old_field, new_field))
+
         return changes
-    
-    @staticmethod
-    def _field_changed(old_field: Dict, new_field: Dict) -> bool:
-        """Check if field definition has changed."""
-        # Get field attributes
-        old_max_length = old_field.max_length
-        new_max_length = new_field.max_length
-        old_dim = old_field.dim
-        new_dim = new_field.dim
-        
-        # Convert string representations to numbers or None
-        if isinstance(old_max_length, str):
-            old_max_length = None if old_max_length in ["-1", "None"] else int(old_max_length)
-        if isinstance(new_max_length, str):
-            new_max_length = None if new_max_length in ["-1", "None"] else int(new_max_length)
-        if isinstance(old_dim, str):
-            old_dim = None if old_dim in ["-1", "None"] else int(old_dim)
-        if isinstance(new_dim, str):
-            new_dim = None if new_dim in ["-1", "None"] else int(new_dim)
-        
-        # For VARCHAR fields, ensure max_length is a positive integer
-        if old_field.dtype == "VARCHAR":
-            old_max_length = old_max_length if old_max_length and old_max_length > 0 else 100
-        else:
-            old_max_length = None
+
+    def _is_field_modified(self, old_field: SchemaField, new_field: SchemaField) -> bool:
+        """Check if a field has been modified."""
+        # Don't consider changes to base fields
+        if old_field.name in ['embedding', 'metadata', 'id']:
+            return False
             
-        if new_field.dtype == "VARCHAR":
-            new_max_length = new_max_length if new_max_length and new_max_length > 0 else 100
-        else:
-            new_max_length = None
-            
-        # For vector fields, ensure dim is a positive integer
-        vector_types = ["FLOAT_VECTOR", "BINARY_VECTOR"]
-        if old_field.dtype in vector_types:
-            old_dim = old_dim if old_dim and old_dim > 0 else 1536
-        else:
-            old_dim = None
-            
-        if new_field.dtype in vector_types:
-            new_dim = new_dim if new_dim and new_dim > 0 else 1536
-        else:
-            new_dim = None
-        
-        # Compare values
-        max_length_changed = old_max_length != new_max_length
-        dim_changed = old_dim != new_dim
-        
         return (
             old_field.dtype != new_field.dtype or
-            max_length_changed or
-            dim_changed
+            old_field.max_length != new_field.max_length or
+            old_field.dim != new_field.dim or
+            old_field.is_primary != new_field.is_primary
         )
-    
+
     @staticmethod
-    def generate_migration_code(model_class: Type[BaseModel], changes: Dict[str, List]) -> Tuple[str, str]:
+    def generate_migration_code(model_class: Type[MilvusModel], changes: Dict[str, List]) -> Tuple[str, str]:
         """Generate upgrade and downgrade code for schema changes."""
         collection_name = model_class.collection_name()
         

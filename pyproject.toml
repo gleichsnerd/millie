@@ -33,7 +33,7 @@ Homepage = "https://github.com/gleichsnerd/millie"
 Repository = "https://github.com/gleichsnerd/millie.git"
 
 [project.scripts]
-millie = "millie.cli:cli"
+millie = "millie.cli:main"
 
 [project.optional-dependencies]
 dev = [
