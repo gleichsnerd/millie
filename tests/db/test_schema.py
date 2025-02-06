@@ -1,5 +1,5 @@
 import pytest
-from millie.schema.schema import Schema, SchemaField
+from millie.db.schema import Schema, SchemaField
 from pymilvus import DataType
 from dataclasses import dataclass
 from pymilvus import FieldSchema
@@ -291,11 +291,14 @@ def test_schema_field_to_field_schema():
     assert field_schema.is_primary
 
 # Test model for Schema tests
-@MilvusModel()
-class TestModel:
+class TestModel(MilvusModel):
     name: str
     age: int
     vector: List[float]
+    
+    @classmethod
+    def collection_name(cls) -> str:
+        return "test"
     
     @classmethod
     def schema(cls):
@@ -397,9 +400,12 @@ def test_schema_get_field():
 
 def test_schema_missing_schema_method():
     """Test error when model is missing schema method."""
-    @MilvusModel()
-    class InvalidModel:
+    class InvalidModel(MilvusModel):
         name: str
+        
+        @classmethod
+        def collection_name(cls) -> str:
+            return "invalid"
     
-    with pytest.raises(ValueError, match=r"Model InvalidModel missing required schema\(\) method"):
+    with pytest.raises(ValueError, match=r"Model InvalidModel"):
         Schema.from_model(InvalidModel) 

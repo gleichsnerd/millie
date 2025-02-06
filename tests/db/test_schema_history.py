@@ -2,8 +2,8 @@ import os
 import pytest
 from pathlib import Path
 from millie.db.schema_history import SchemaHistory
-from millie.schema.schema import Schema, SchemaField
-from millie.orm.base_model import BaseModel
+from millie.db.schema import Schema, SchemaField
+from millie.orm.milvus_model import MilvusModel
 from millie.orm.milvus_model import MilvusModel
 
 @pytest.fixture
@@ -32,14 +32,14 @@ def test_schema_history_initialization(schema_history, temp_history_dir, temp_mi
 
 def test_get_model_schema_filename(schema_history):
     """Test getting model schema filename."""
-    class TestModel(BaseModel):
+    class TestModel(MilvusModel):
         pass
     
     filename = schema_history.get_model_schema_filename(TestModel)
     assert filename.endswith("TestModel.json")
     
     # Test with Combined prefix
-    class CombinedTestModel(BaseModel):
+    class CombinedTestModel(MilvusModel):
         pass
     
     filename = schema_history.get_model_schema_filename(CombinedTestModel)
@@ -47,7 +47,7 @@ def test_get_model_schema_filename(schema_history):
 
 def test_load_model_schema_empty(schema_history):
     """Test loading schema when no file exists."""
-    class TestModel(BaseModel):
+    class TestModel(MilvusModel):
         @classmethod
         def collection_name(cls):
             return "test_collection"
@@ -73,7 +73,7 @@ def test_save_and_load_model_schema(schema_history):
     schema_history.save_model_schema(schema)
     
     # Create a model class to load the schema
-    class TestModel(BaseModel):
+    class TestModel(MilvusModel):
         @classmethod
         def collection_name(cls):
             return "test_collection"
@@ -173,7 +173,7 @@ class Migration_20240126_test:
     second_file.write_text(second_migration.lstrip())
     
     # Create model class
-    class TestModel(BaseModel):
+    class TestModel(MilvusModel):
         @classmethod
         def collection_name(cls):
             return "test_collection"
@@ -245,7 +245,7 @@ def test_schema_versioning(schema_history):
     schema_history.save_model_schema(schema)
     
     # Load and verify version
-    class TestModel(BaseModel):
+    class TestModel(MilvusModel):
         @classmethod
         def collection_name(cls):
             return "test_collection"
