@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class SchemaDiffer:
     """Utility class to find differences between schemas."""
 
-    def diff_schemas(self, old_schema: Schema, new_schema: Schema) -> Dict[str, List[SchemaField]]:
+    def diff_schemas(self, old_schema: Schema | None, new_schema: Schema) -> Dict[str, List[SchemaField]]:
         """Compare two schemas and return the differences."""
         changes = {
             "added": [],
@@ -27,6 +27,7 @@ class SchemaDiffer:
             for field in new_schema.fields:
                 if field.name not in ['embedding', 'metadata']:
                     changes["added"].append(field)
+                    changes["initial"] = True
             return changes
 
         old_fields = {f.name: f for f in old_schema.fields}
@@ -54,7 +55,7 @@ class SchemaDiffer:
     def _is_field_modified(self, old_field: SchemaField, new_field: SchemaField) -> bool:
         """Check if a field has been modified."""
         # Don't consider changes to base fields
-        if old_field.name in ['embedding', 'metadata', 'id']:
+        if old_field.name in ['embedding', 'metadata']:
             return False
             
         return (

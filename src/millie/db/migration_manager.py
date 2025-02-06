@@ -89,18 +89,18 @@ class MigrationManager:
         """Get model class by name."""
         return MilvusModelMeta.get_model(model_name)
     
-    def detect_changes(self):
+    def detect_changes(self, save_schema: bool = False):
         """Detect schema changes for all @MilvusModel classes"""
         models = self._find_all_models()
         changes = {}
         for model in models:
-            model_changes = self.detect_changes_for_model(model)
+            model_changes = self.detect_changes_for_model(model, save_schema)
             if model_changes["added"] or model_changes["removed"] or model_changes["modified"]:
                 changes[model.__name__] = model_changes
 
         return changes
 
-    def detect_changes_for_model(self, model_cls: Type[MilvusModel]):
+    def detect_changes_for_model(self, model_cls: Type[MilvusModel], save_schema: bool = False):
         """Detect schema changes."""
         history = SchemaHistory(self.history_dir, self.migrations_dir)
         differ = SchemaDiffer()
@@ -111,25 +111,11 @@ class MigrationManager:
         
         # If no current schema exists, treat all fields as added
         if current_schema is None:
-            schema_def = model_cls.schema()
-            if not schema_def or 'fields' not in schema_def:
-                return {"added": [], "removed": [], "modified": []}
-            
-            # For initial migration, include all fields
-            added_fields = []
-            for field_schema in schema_def['fields']:
-                added_fields.append(SchemaField.from_field_schema(field_schema))
-            
-            # Save the initial schema to history
-            initial_schema = Schema(
-                name=model_cls.__name__,
-                collection_name=model_cls.collection_name(),
-                fields=added_fields,
-                is_migration_collection=getattr(model_cls, 'is_migration_collection', False)
-            )
-            history.save_model_schema(initial_schema)
-            
+            initial_schema = history.build_initial_schema(model_cls)
+            added_fields = initial_schema.fields
+            history.save_model_schema(initial_schema) if save_schema else None
             return {
+                "initial": True,
                 "added": added_fields,
                 "removed": [],
                 "modified": []
@@ -139,8 +125,9 @@ class MigrationManager:
         changes = differ.diff_schemas(current_schema, new_schema)
         
         # Only save the new schema if there are actual changes
-        if changes["added"] or changes["removed"] or changes["modified"]:
+        if save_schema and (changes["added"] or changes["removed"] or changes["modified"]):
             history.save_model_schema(new_schema)
+
             
         return changes
         
@@ -158,15 +145,16 @@ class MigrationManager:
         migration_path = os.path.join(self.migrations_dir, f"{migration_name}.py")
         
         # Get changes for all models
-        changes = self.detect_changes()
+        migration_changes = self.detect_changes(save_schema=True)
         
         # Generate migration content for each model with changes
         builder = MigrationBuilder()
         up_codes = []
         down_codes = []
         
-        for model_name, model_changes in changes.items():
+        for model_name, model_changes in migration_changes.items():
             model_cls = self._get_model_by_name(model_name)
+            
             if model_cls:
                 up_code, down_code = builder.generate_migration_code(model_cls, model_changes)
                 up_codes.append(up_code)
