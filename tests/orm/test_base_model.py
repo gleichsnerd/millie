@@ -1,13 +1,29 @@
 from dataclasses import dataclass
 from datetime import datetime
 import pytest
-from millie.orm.base_model import BaseModel
+from millie.orm.milvus_model import MilvusModel
 
-@dataclass(kw_only=True)
-class TestModel(BaseModel):
+class TestModel(MilvusModel):
     name: str
     age: int
     extra_data: dict = None
+
+    @classmethod
+    def collection_name(cls) -> str:
+        return "test"
+
+    @classmethod
+    def schema(cls) -> dict:
+        return {
+            "fields": [
+                {"name": "id", "type": "str", "is_primary": True},
+                {"name": "name", "type": "str"},
+                {"name": "age", "type": "int"},
+                {"name": "embedding", "type": "float_vector", "dim": 2},
+                {"name": "metadata", "type": "json"},
+                {"name": "extra_data", "type": "json"}
+            ]
+        }
 
 def test_collection_name():
     """Test collection name generation."""
