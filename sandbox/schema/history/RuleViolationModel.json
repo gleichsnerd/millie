@@ -1,6 +1,6 @@
 {
-  "name": "RuleModel",
-  "collection_name": "rules",
+  "name": "RuleViolationModel",
+  "collection_name": "rule_violations",
   "schema": {
     "fields": [
       {
@@ -10,12 +10,12 @@
         "is_primary": true
       },
       {
-        "name": "type",
+        "name": "rule_id",
         "dtype": "VARCHAR",
-        "max_length": 50
+        "max_length": 100
       },
       {
-        "name": "section",
+        "name": "penalty",
         "dtype": "VARCHAR",
         "max_length": 50
       },
@@ -23,10 +23,6 @@
         "name": "description",
         "dtype": "VARCHAR",
         "max_length": 1000
-      },
-      {
-        "name": "priority",
-        "dtype": "INT64"
       },
       {
         "name": "embedding",
@@ -40,6 +36,6 @@
     ]
   },
   "is_migration_collection": false,
-  "version": 4,
-  "updated_at": "2025-02-06T13:13:59.044517"
+  "version": 1,
+  "updated_at": "2025-02-06T13:13:59.044753"
 }

@@ -12,8 +12,7 @@ class RuleViolationSchema(TypedDict):
     embedding: Optional[List[float]]
     metadata: Dict[str, Any]
 
-# Intentionally not inheriting from MilvusModel
-class RuleViolationModel():
+class RuleViolationModel(MilvusModel):
     """Model for rule violations."""
     # Required fields
     id: str

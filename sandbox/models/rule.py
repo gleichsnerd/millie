@@ -37,6 +37,7 @@ class RuleModel(MilvusModel):
                 FieldSchema("type", DataType.VARCHAR, max_length=50),
                 FieldSchema("section", DataType.VARCHAR, max_length=50),
                 FieldSchema("description", DataType.VARCHAR, max_length=1000),
+                FieldSchema("priority", DataType.INT64),
                 FieldSchema("embedding", DataType.FLOAT_VECTOR, dim=1536),
                 FieldSchema("metadata", DataType.JSON)
             ]
