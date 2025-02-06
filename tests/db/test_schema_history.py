@@ -1,4 +1,5 @@
 import os
+from pymilvus import DataType, FieldSchema
 import pytest
 from pathlib import Path
 from millie.db.schema_history import SchemaHistory
@@ -53,9 +54,38 @@ def test_load_model_schema_empty(schema_history):
             return "test_collection"
     
     schema = schema_history.get_schema_from_history(TestModel)
+    assert schema is None
+
+def test_build_initial_schema(schema_history):
+    """Test loading schema when no file exists."""
+    class TestModel(MilvusModel):
+        @classmethod
+        def collection_name(cls):
+            return "test_collection"
+    
+    schema = schema_history.build_initial_schema(TestModel)
     assert schema is not None
     assert schema.collection_name == "test_collection"
     assert len(schema.fields) == 0
+
+def test_build_initial_schema_with_fields(schema_history):
+    """Test building initial schema with fields."""
+    class TestModel(MilvusModel):
+        @classmethod
+        def collection_name(cls):
+            return "test_collection"
+        
+        @classmethod
+        def schema(cls):
+            return {
+                "fields": [
+                    FieldSchema("id", DataType.INT64, is_primary=True),
+                ]
+            }
+    schema = schema_history.build_initial_schema(TestModel)
+    assert schema is not None
+    assert schema.collection_name == "test_collection"
+    assert len(schema.fields) == 1
 
 def test_save_and_load_model_schema(schema_history):
     """Test saving and loading a schema."""

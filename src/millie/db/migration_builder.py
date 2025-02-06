@@ -3,7 +3,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Tuple, Type, Any
 from millie.orm.milvus_model import MilvusModel
-from millie.db.schema import SchemaField
+from millie.db.schema import Schema, SchemaField
 
 class MigrationBuilder:
     """Handles the creation of migration files."""
@@ -32,7 +32,7 @@ class MigrationBuilder:
         collection_name = model_class.collection_name()
         
         # For initial migration, create collection with all fields
-        if not changes["modified"] and not changes["removed"] and changes["added"]:
+        if "initial" in changes and changes["initial"]:
             # Build field schemas
             field_schemas = []
             for field in changes["added"]:

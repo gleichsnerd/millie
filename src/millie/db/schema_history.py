@@ -102,6 +102,31 @@ class SchemaHistory:
             schema = self.apply_migration_to_schema(schema, migration_file)
         
         return schema
+    
+    def build_initial_schema(self, model_cls: Type[MilvusModel]) -> Schema:
+        schema_def = model_cls.schema()
+        if not schema_def or 'fields' not in schema_def:
+            return Schema(
+                name=model_cls.__name__,
+                collection_name=model_cls.collection_name(),
+                fields=[],
+                is_migration_collection=getattr(model_cls, 'is_migration_collection', False)
+            )
+        
+        # For initial migration, include all fields
+        added_fields = []
+        for field_schema in schema_def['fields']:
+            added_fields.append(SchemaField.from_field_schema(field_schema))
+        
+        # Save the initial schema to history
+        initial_schema = Schema(
+            name=model_cls.__name__,
+            collection_name=model_cls.collection_name(),
+            fields=added_fields,
+            is_migration_collection=getattr(model_cls, 'is_migration_collection', False)
+        )
+
+        return initial_schema
 
     def get_migrations(self) -> List[str]:
         """Get list of migration files in order."""
