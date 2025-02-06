@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 from millie.db.session import MilvusSession
 from millie.cli.util import run_docker_command
+from millie.db.seed_manager import SeedManager
 load_dotenv()
 
 @click.group()
@@ -31,70 +32,69 @@ def db():
 @click.option("--host", default=os.getenv("MILVUS_HOST", "localhost"), help="The host of the Milvus server")
 def check(port, db_name, host):
     """Check connection to the database and if it exists"""
-    # First check the container
-    result = run_docker_command(
-        [
-            "docker",
-            "ps",
-            "--filter",
-            "name=milvus-standalone",
-            "--format",
-            "{{.Status}}",
-        ],
-        check=False,
-    )
+    try:
+        # First check the container
+        result = run_docker_command(
+            [
+                "docker",
+                "ps",
+                "--filter",
+                "name=milvus-standalone",
+                "--format",
+                "{{.Status}}",
+            ],
+            check=False,
+        )
 
-    if not result.stdout.strip() or "Up" not in result.stdout:
-        echo("❌ Milvus is not running. Starting it now...")
-        try:
-            # Check if container exists but is not running
-            exists_result = run_docker_command(
-                [
-                    "docker",
-                    "ps",
-                    "-a",
-                    "--filter",
-                    "name=milvus-standalone",
-                    "--format",
-                    "{{.Status}}",
-                ],
-                check=False,
-            )
-            if exists_result.stdout.strip():
-                echo("Found existing container in bad state. Removing it...")
-                run_docker_command(["docker", "rm", "-f", "milvus-standalone"])
+        if not result.stdout.strip() or "Up" not in result.stdout:
+            echo("❌ Milvus is not running. Starting it now...")
+            try:
+                # Check if container exists but is not running
+                exists_result = run_docker_command(
+                    [
+                        "docker",
+                        "ps",
+                        "-a",
+                        "--filter",
+                        "name=milvus-standalone",
+                        "--format",
+                        "{{.Status}}",
+                    ],
+                    check=False,
+                )
+                if exists_result.stdout.strip():
+                    echo("Found existing container in bad state. Removing it...")
+                    run_docker_command(["docker", "rm", "-f", "milvus-standalone"])
 
-            from ..milvus.manager import start as start_milvus
-            start_milvus()
+                from ..milvus.manager import start as start_milvus
+                start_milvus()
 
-        except Exception as e:
-            echo(f"❌ Failed to start Milvus: {str(e)}", err=True)
+            except Exception as e:
+                echo(f"❌ Failed to start Milvus: {str(e)}", err=True)
+                sys.exit(1)
+
+        # Verify container is running and ports are mapped correctly
+        echo("Verifying Milvus container status...")
+        inspect_result = run_docker_command(
+            ["docker", "inspect", "milvus-standalone"], check=False
+        )
+        if inspect_result.returncode != 0:
+            echo("❌ Failed to inspect Milvus container", err=True)
             sys.exit(1)
 
-    # Verify container is running and ports are mapped correctly
-    echo("Verifying Milvus container status...")
-    inspect_result = run_docker_command(
-        ["docker", "inspect", "milvus-standalone"], check=False
-    )
-    if inspect_result.returncode != 0:
-        echo("❌ Failed to inspect Milvus container", err=True)
-        sys.exit(1)
+        # Check container logs for readiness
+        logs_result = run_docker_command(
+            ["docker", "logs", "milvus-standalone"], check=False
+        )
+        if "error" in logs_result.stdout.lower() or "error" in logs_result.stderr.lower():
+            echo("⚠️ Warning: Potential errors found in Milvus logs:")
+            echo(logs_result.stderr)
 
-    # Check container logs for readiness
-    logs_result = run_docker_command(
-        ["docker", "logs", "milvus-standalone"], check=False
-    )
-    if "error" in logs_result.stdout.lower() or "error" in logs_result.stderr.lower():
-        echo("⚠️ Warning: Potential errors found in Milvus logs:")
-        echo(logs_result.stderr)
-
-    echo(f"Attempting to connect to Milvus at {host}:{port}...")
-    try:
+        echo(f"Attempting to connect to Milvus at {host}:{port}...")
         # Convert port to string to match test expectations
-        session = MilvusSession(host=host, port=str(port), db_name=db_name)
-        session.connect()
+        MilvusSession(host=host, port=str(port), db_name=db_name)
         echo(f"✅ Successfully connected to database '{db_name}'")
-        return 0
+        sys.exit(0)
     except Exception as e:
         echo(f"❌ Error connecting to database: {str(e)}", err=True)
         sys.exit(1)
@@ -117,14 +117,15 @@ def drop():
               help="Skip embedding generation (useful for development when rules haven't changed)")
 def seed(skip_embeddings):
     """Seed the database with data from decorated classes"""
-    pass
-    # """Seed the database with initial game data."""
-    # echo("🌱Seeding database...")
-    # try:
-    #     config = RAGConfig()
-    #     rag = RAGManager(config)
-    #     rag.seed_game_data(skip_embeddings=skip_embeddings)
-    #     echo("✅ Database seeded successfully!")
-    # except Exception as e:
-    #     echo(f"❌ Error seeding database: {str(e)}", err=True)
-    #     sys.exit(1)
+    manager = SeedManager()
+    results = manager.run_seeders()
+    
+    # if not results:
+    #     click.echo("No seeders found.")
+    #     return
+        
+    # for name, result in results.items():
+    #     if isinstance(result, str) and result.startswith("Error:"):
+    #         click.echo(f"❌ {name}: {result}")
+    #     else:
+    #         click.echo(f"✅ {name} completed successfully")

@@ -9,8 +9,6 @@ from millie.db.migration_history import MigrationHistoryModel
 from millie.db.session import MilvusSession
 from millie.db.schema_history import SchemaHistory
 from millie.db.migration_manager import MigrationManager
-load_dotenv()
-
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 def migrate():
@@ -93,33 +91,60 @@ def create(name: str):
         manager = MigrationManager()        
         changes = manager.detect_changes()
         
-        if len(changes) == 0:
+        if not changes:
             echo("No schema changes detected.")
             sys.exit(0)
         
+        has_real_changes = False
         for model_name, model_changes in changes.items():
-            echo(f"\nChanges detected in {model_name}:")
-            if model_changes["added"]:
-                echo("\nAdded fields:")
-                for field in model_changes["added"]:
-                    echo(f"  + {field.name} ({field.dtype})")
-            if model_changes["removed"]:
-                echo("\nRemoved fields:")
-                for field in model_changes["removed"]:
-                    echo(f"  - {field.name} ({field.dtype})")
-            if model_changes["modified"]:
-                echo("\nModified fields:")
-                for old, new in model_changes["modified"]:
-                    echo(f"  ~ {old.name}: {old.dtype} -> {new.dtype}")
+            if model_changes["added"] or model_changes["removed"] or model_changes["modified"]:
+                has_real_changes = True
+                echo(f"\nChanges detected in {model_name}:")
+                if model_changes["added"]:
+                    echo("\nAdded fields:")
+                    for field in model_changes["added"]:
+                        echo(f"  + {field.name} ({field.dtype})")
+                if model_changes["removed"]:
+                    echo("\nRemoved fields:")
+                    for field in model_changes["removed"]:
+                        echo(f"  - {field.name} ({field.dtype})")
+                if model_changes["modified"]:
+                    echo("\nModified fields:")
+                    for old, new in model_changes["modified"]:
+                        echo(f"  ~ {old.name}: {old.dtype} -> {new.dtype}")
         
-    
-        migration_name = manager.generate_migration(name)
+        if not has_real_changes:
+            echo("No schema changes detected.")
+            sys.exit(0)
             
-        if migration_name:
-            echo(f"✅ Created migration {migration_name}")
+        migration_path = manager.generate_migration(name)
+            
+        if migration_path:
+            echo(f"✅ Created migration {migration_path}")
         else:
             echo("No migration created.")
             
     except Exception as e:
         echo(f"❌ Error creating migration: {str(e)}", err=True)
+        sys.exit(1)
+
+@migrate.command()
+def run():
+    """Run all pending migrations."""
+    try:
+        enforce_migration_table()
+        
+        echo("Running pending migrations...")
+        manager = MigrationManager()
+        applied = manager.run_migrations()
+        
+        if not applied:
+            echo("No pending migrations to run.")
+        else:
+            for migration in applied:
+                echo(f"✅ Applied migration: {os.path.basename(migration)}")
+            echo("\n✅ Successfully ran all migrations")
+            
+    except Exception as e:
+        echo(f"❌ Error running migrations: {str(e)}", err=True)
         sys.exit(1)

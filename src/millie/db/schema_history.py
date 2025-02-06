@@ -1,5 +1,7 @@
 import os
 import json
+import glob
+import logging
 import importlib.util
 import inspect
 from pathlib import Path
@@ -9,20 +11,27 @@ from datetime import datetime
 from dotenv import load_dotenv
 from pymilvus import FieldSchema, DataType
 
-from millie.orm.base_model import BaseModel
 from millie.orm.milvus_model import MilvusModel
-from millie.schema.schema import Schema, SchemaField
+from millie.orm.milvus_model import MilvusModel
+from millie.db.schema import Schema, SchemaField
 
 load_dotenv()
 
 class SchemaHistory:
-    """Manages schema history for MilvusModel-decorated classes."""
+    """Tracks schema history for Milvus collections."""
     
-    def __init__(self, history_dir, migrations_dir):
+    def __init__(self, history_dir: str, migrations_dir: str):
+        """Initialize schema history.
+        
+        Args:
+            history_dir: Directory to store schema history files
+            migrations_dir: Directory containing migration files
+        """
         self.history_dir = history_dir
         self.migrations_dir = migrations_dir
+        os.makedirs(history_dir, exist_ok=True)
 
-    def get_model_schema_filename(self, model_cls: Type[BaseModel]) -> str:
+    def get_model_schema_filename(self, model_cls: Type[MilvusModel]) -> str:
         """Get the path to a model's schema file."""
         model_name = model_cls.__name__
         # Strip off any decorator-added prefixes
@@ -30,14 +39,22 @@ class SchemaHistory:
             model_name = model_name[8:]  # Remove 'Combined' prefix
         return os.path.join(self.history_dir, f"{model_name}.json")
 
-    def get_schema_from_history(self, model_cls: Type[BaseModel]) -> Schema:
-        """Load schema history for a specific model."""
-        model_file = self.get_model_schema_filename(model_cls)
-        if not os.path.exists(model_file):
-            # Return a new empty schema for the model
-            return self.build_model_schema_from_migrations(model_cls)
+    def get_schema_from_history(self, model_cls: Type[MilvusModel]) -> Optional[Schema]:
+        """Get the current schema for a model from history.
         
-        with open(model_file, 'r') as f:
+        Args:
+            model_cls: Model class to get schema for
+            
+        Returns:
+            Current schema or None if no history exists
+        """
+        # For initial schema, return None to trigger schema creation
+        history_file = self.get_model_schema_filename(model_cls)
+        if not os.path.exists(history_file):
+            return None
+            
+        # Load schema from history file
+        with open(history_file, 'r') as f:
             data = json.load(f)
             return Schema.from_dict(data)
 
@@ -69,7 +86,7 @@ class SchemaHistory:
         # Update the schema object with the new version
         schema.version = data["version"]
 
-    def build_model_schema_from_migrations(self, model_class: Type[BaseModel]) -> Schema:
+    def build_model_schema_from_migrations(self, model_class: Type[MilvusModel]) -> Schema:
         """Build schema representation from migrations."""
         # Start with empty schema
         schema = Schema(
@@ -246,7 +263,7 @@ class SchemaHistory:
             print(f"Error parsing field schema: {e}")
             return None
 
-    def update_model_schema(self, model_class: Type[BaseModel]) -> Schema:
+    def update_model_schema(self, model_class: Type[MilvusModel]) -> Schema:
         """Update schema for a single model."""
         current = self.get_schema_from_history(model_class)
         new_schema = self.build_model_schema_from_migrations(model_class)
@@ -256,9 +273,19 @@ class SchemaHistory:
             
         return new_schema
 
-    def schema_changed(self, model_class: Type[BaseModel]) -> bool:
+    def schema_changed(self, model_class: Type[MilvusModel]) -> bool:
         """Check if a model's schema has changed from history."""
         current = self.get_schema_from_history(model_class)
         new_schema = self.build_model_schema_from_migrations(model_class)
         
         return current.to_dict() != new_schema.to_dict()
+
+    def save_schema_to_history(self, schema: Schema):
+        """Save schema to history.
+        
+        Args:
+            schema: Schema to save
+        """
+        history_file = os.path.join(self.history_dir, f"{schema.collection_name}.json")
+        with open(history_file, 'w') as f:
+            json.dump(schema.to_dict(), f, indent=2)
