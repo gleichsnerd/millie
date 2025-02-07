@@ -194,7 +194,7 @@ class SeedManager:
                 
                 # Delete existing entities with these IDs
                 if ids:
-                    expr = f'id in ["{"\",\"".join(ids)}"]'
+                    expr = 'id in ["' + '","'.join(ids) + '"]'
                     collection.delete(expr)
                 
                 # Insert all entities
