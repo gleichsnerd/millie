@@ -397,15 +397,3 @@ def test_schema_get_field():
     # Test non-existent field
     field = schema.get_field("nonexistent")
     assert field is None
-
-def test_schema_missing_schema_method():
-    """Test error when model is missing schema method."""
-    class InvalidModel(MilvusModel):
-        name: str
-        
-        @classmethod
-        def collection_name(cls) -> str:
-            return "invalid"
-    
-    with pytest.raises(ValueError, match=r"Model InvalidModel"):
-        Schema.from_model(InvalidModel) 

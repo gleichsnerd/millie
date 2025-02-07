@@ -4,41 +4,38 @@ from sandbox.models.rule import RuleModel
 from sandbox.models.rule_violation import RuleViolationModel
 
 @milvus_seeder
-def seed_rules():
-    """Seed example rules into Milvus."""
-    # Create some example rules
-    rules = [
-        RuleModel(
+def seed_rule_violations():
+    """Seed example rule violations into Milvus."""
+    # Create some example rule violations
+    violations = [
+        RuleViolationModel(
             id="rule_1",
             embedding=[0.1] * 1536,  # Example 1536-dim embedding
-            name="Use of hardcoded credentials",
-            type="security",
+            rule_id="R001",
+            penalty="critical",
             description="Use of hardcoded credentials",
-            section="security",
             metadata={
                 "framework": "general",
                 "category": "security"
             }
         ),
-        RuleModel(
+        RuleViolationModel(
             id="rule_2",
             embedding=[0.2] * 1536,  # Example 1536-dim embedding
-            name="Inefficient database query pattern",
-            type="performance",
+            rule_id="R002",
+            penalty="warning",
             description="Inefficient database query pattern",
-            section="performance",
             metadata={
                 "framework": "django",
                 "category": "performance"
             }
         ),
-        RuleModel(
+        RuleViolationModel(
             id="rule_3",
             embedding=[0.3] * 1536,  # Example 1536-dim embedding
-            name="Missing error handling",
-            type="reliability",
+            rule_id="R003",
+            penalty="info",
             description="Missing error handling",
-            section="reliability",
             metadata={
                 "framework": "general",
                 "category": "reliability"
@@ -46,5 +43,4 @@ def seed_rules():
         )
     ]
     
-    return rules
-   
+    return violations

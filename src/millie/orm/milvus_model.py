@@ -4,8 +4,9 @@ from datetime import datetime
 import json
 from dataclasses import dataclass, field as dataclass_field, fields as dataclass_fields, is_dataclass, MISSING
 from typeguard import check_type
+from pymilvus import DataType, FieldSchema
 
-from millie.orm.fields import field
+from millie.orm.fields import milvus_field
 
 T = TypeVar('T', bound='MilvusModel')
 
@@ -146,12 +147,21 @@ class TypeCheckError(TypeError):
 
 class MilvusModel(ABC, metaclass=MilvusModelMeta):
     """Base class for all Milvus models."""
-    id: str
-    embedding: Optional[List[float]] = dataclass_field(default=None)
-    metadata: Dict[str, Any] = dataclass_field(default_factory=dict)
+    embedding: Optional[List[float]] = milvus_field(DataType.FLOAT_VECTOR, dim=1536, default=None)
+    metadata: Dict[str, Any] = milvus_field(DataType.JSON, default_factory=dict)
     
     # Class variable to mark migration collections
     is_migration_collection: ClassVar[bool] = False
+    
+    def __init__(self, **kwargs: Any) -> None:
+        """Initialize the model with the given fields.
+        
+        Args:
+            **kwargs: Field values to set
+        """
+        super().__init__()
+        for key, value in kwargs.items():
+            setattr(self, key, value)
     
     def __post_init__(self):
         """Convert metadata and extra_data to dict if they're JSON strings."""
@@ -176,10 +186,27 @@ class MilvusModel(ABC, metaclass=MilvusModelMeta):
         ...
     
     @classmethod
-    @abstractmethod
     def schema(cls) -> Dict[str, Any]:
-        """Get the Milvus schema for this model."""
-        return None
+        """Get the Milvus schema for this model by inspecting decorated fields."""
+        fields = []
+        
+        # Get all dataclass fields including from parent classes
+        for field in dataclass_fields(cls):
+            if str(field.type).startswith('typing.ClassVar'):
+                continue
+                
+            # Check if field has Milvus metadata
+            if field.metadata and 'milvus' in field.metadata:
+                milvus_info = field.metadata['milvus']
+                fields.append(
+                    FieldSchema(
+                        field.name,
+                        milvus_info.data_type,
+                        **milvus_info.kwargs
+                    )
+                )
+        
+        return {"fields": fields}
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert model to dictionary for Milvus insertion."""

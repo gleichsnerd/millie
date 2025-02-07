@@ -9,22 +9,20 @@ from pathlib import Path
 from typing import Callable, List, Dict, Any, Optional, Set, Type, TypeVar
 import uuid
 
-from ..types.milvus import MilvusModel, EmbeddingGenerator
+from millie.orm.milvus_model import MilvusModel
 
-from .milvus_embedder import _EMBEDDERS, milvus_embedder
-
-ModelClass = TypeVar('ModelClass', bound=MilvusModel)
+from .milvus_embedder import _EMBEDDERS
 
 class EmbeddingManager:
     """Manages embedding generation for Milvus collections."""
     
-    def __init__(self, cwd: str = None):
+    def __init__(self, cwd: str = os.getcwd()):
         """Initialize the embedding manager.
         
         Args:
             cwd: Working directory to scan for embedder files. Defaults to current directory.
         """
-        self.cwd = cwd or os.getcwd()
+        self.cwd = cwd
         
     def _has_embedder_decorator(self, file_path: str) -> bool:
         """Check if a file contains any functions with the milvus_embedder decorator.
@@ -174,7 +172,7 @@ class EmbeddingManager:
             json.dump(embeddings, f, indent=2)
     
     @staticmethod
-    def create_model_from_data(model_cls: Type[ModelClass], data: Dict[str, Any], field: str, source_file: Optional[Path] = None) -> ModelClass:
+    def create_model_from_data(model_cls: Type[MilvusModel], data: Dict[str, Any], field: str, source_file: Optional[Path] = None) -> MilvusModel:
         """Create a model instance from loaded data.
         
         Args:
@@ -205,7 +203,7 @@ class EmbeddingManager:
         return model_cls(**data)
     
     @staticmethod
-    def process_rule_file(entities: List[Dict[str, Any]], model_class: Type[ModelClass], source_file: Path, field: str, embedding_generator: EmbeddingGenerator) -> None:
+    def process_file(entities: List[Dict[str, Any]], model_class: Type[MilvusModel], source_file: Path, field: str, embedding_generator: Callable) -> None:
         """Process a single source file and update its embeddings.
         
         Args:
@@ -230,7 +228,7 @@ class EmbeddingManager:
                 needed_hashes.add(hash_value)
                 
                 if hash_value not in current_embeddings:
-                    print(f"Generating embedding for model: {model.id}")
+                    print(f"Generating embedding for model: {model}")
                     embedding = embedding_generator(value)
                     current_embeddings[hash_value] = embedding
         

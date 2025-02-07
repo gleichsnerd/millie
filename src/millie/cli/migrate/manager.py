@@ -19,7 +19,7 @@ def migrate():
 
 def check_migration_table():
     session = MilvusSession(host=os.getenv("MILVUS_HOST"), port=os.getenv("MILVUS_PORT"))
-    return session.collection_exists(MigrationHistoryModel.collection_name())
+    return session.collection_exists(MigrationHistoryModel)
         
 def enforce_migration_table():
     if not check_migration_table():

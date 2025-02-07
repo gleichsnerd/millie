@@ -1,10 +1,8 @@
-import subprocess
 import pytest
 import click
 from click.testing import CliRunner
 from unittest.mock import patch
 
-from millie.cli import cli, add_millie_commands
 from millie.cli.attu.manager import attu
 from tests.cli.docker_mock import DockerCommandMock, MockResponse
 
