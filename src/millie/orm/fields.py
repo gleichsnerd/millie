@@ -1,11 +1,11 @@
 from dataclasses import field as dataclass_field, InitVar
-from typing import Any, Callable, TypeAlias, TypeVar, overload, Union
+from typing import Any, Callable, TypeVar, overload, Union, get_args, get_origin
 from pymilvus import DataType
 
 T = TypeVar('T')
 
 # Type aliases to help the type checker understand field assignments
-FieldType: TypeAlias = Union[T, InitVar[T]]  # This helps type checker understand these become parameters
+FieldType = TypeVar('FieldType')  # Remove the problematic Union with InitVar
 
 class MilvusFieldInfo:
     """Stores Milvus field configuration."""
@@ -14,13 +14,13 @@ class MilvusFieldInfo:
         self.kwargs = kwargs
 
 @overload
-def milvus_field(data_type: DataType, *, default: T, **kwargs) -> FieldType[T]: ...
+def milvus_field(data_type: DataType, *, default: T, **kwargs) -> T: ...
 
 @overload
-def milvus_field(data_type: DataType, *, default_factory: Callable[[], T], **kwargs) -> FieldType[T]: ...
+def milvus_field(data_type: DataType, *, default_factory: Callable[[], T], **kwargs) -> T: ...
 
 @overload
-def milvus_field(data_type: DataType, *, default: Callable[..., T], **kwargs) -> FieldType[T]: ...
+def milvus_field(data_type: DataType, *, default: Callable[..., T], **kwargs) -> T: ...
 
 @overload
 def milvus_field(data_type: DataType, **kwargs) -> Any: ...
