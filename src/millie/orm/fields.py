@@ -1,6 +1,6 @@
-from dataclasses import field as dataclass_field, Field, InitVar
-from typing import Any, Callable, Optional, TypeVar, overload, Union, Type, Dict, Generic, List, TypeAlias
-from pymilvus import DataType, FieldSchema
+from dataclasses import field as dataclass_field, InitVar
+from typing import Any, Callable, TypeAlias, TypeVar, overload, Union
+from pymilvus import DataType
 
 T = TypeVar('T')
 

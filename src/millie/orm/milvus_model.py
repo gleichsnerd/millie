@@ -1,183 +1,331 @@
-from typing import Dict, Any, Type, TypeVar, Optional, List, ClassVar, get_type_hints
+from typing import Dict, Any, Type, TypeVar, Optional, List, ClassVar, get_type_hints, Union
 from abc import ABC, abstractmethod, ABCMeta
 from datetime import datetime
 import json
 from dataclasses import dataclass, field as dataclass_field, fields as dataclass_fields, is_dataclass, MISSING
 from typeguard import check_type
-from pymilvus import DataType, FieldSchema
+from pymilvus import DataType, FieldSchema, Hit, Collection
 
 from millie.orm.fields import milvus_field
+from millie.orm.base_model import BaseMilvusModel, MilvusModelMeta
+from millie.db.connection import MilvusConnection
 
 T = TypeVar('T', bound='MilvusModel')
-
-class MilvusModelMeta(ABCMeta):
-    """Metaclass for Milvus models that handles registration and dataclass conversion."""
-    _models: Dict[str, Type['MilvusModel']] = {}
-    
-    def __new__(mcs, name, bases, namespace, **kwargs):
-        # Add base fields if not already present
-        if name != 'MilvusModel':
-            annotations = namespace.setdefault('__annotations__', {})
-            
-            # Get parent annotations
-            parent_annotations = {}
-            for base in bases:
-                if hasattr(base, '__annotations__'):
-                    parent_annotations.update(base.__annotations__)
-            
-            # Update annotations
-            for field_name, field_type in parent_annotations.items():
-                if field_name not in annotations:
-                    annotations[field_name] = field_type
-                    # Only add field to namespace if it has a default in parent
-                    for base in bases:
-                        if hasattr(base, '__dataclass_fields__'):
-                            if field_name in base.__dataclass_fields__:
-                                field = base.__dataclass_fields__[field_name]
-                                if field.default is not dataclass_field or field.default_factory is not dataclass_field:
-                                    namespace[field_name] = field.default if field.default is not dataclass_field else field.default_factory
-            
-            # Add base fields only if they have explicit defaults
-            if 'embedding' not in namespace:
-                namespace['embedding'] = dataclass_field(default=None)
-                annotations['embedding'] = Optional[List[float]]
-            if 'metadata' not in namespace:
-                namespace['metadata'] = dataclass_field(default_factory=dict)
-                annotations['metadata'] = Dict[str, Any]
-        
-        # Create the class
-        cls = super().__new__(mcs, name, bases, namespace)
-        
-        # Skip registration for MilvusModel itself
-        if name == 'MilvusModel':
-            return cls
-            
-        # Convert to dataclass if not already
-        if not hasattr(cls, '__dataclass_fields__'):
-            # Create a new dataclass that includes all fields
-            cls = dataclass(cls, kw_only=True)
-            
-            # Initialize default fields
-            for field_name, field in cls.__dataclass_fields__.items():
-                if field.default_factory is not dataclass_field:
-                    setattr(cls, field_name, field.default)
-        
-        # Add type checking to __init__
-        original_init = cls.__init__
-        def type_checked_init(self, *args, **kwargs):
-            # Get all fields from this class and parent classes
-            all_fields = {}
-            for base in reversed(cls.__mro__):
-                if hasattr(base, '__dataclass_fields__'):
-                    all_fields.update(base.__dataclass_fields__)
-            
-            # Check for missing required fields first
-            required_fields = []
-            for name, field in all_fields.items():
-                # A field is required if both default and default_factory are MISSING
-                if (field.default is MISSING and 
-                    field.default_factory is MISSING and 
-                    name not in kwargs):
-                    required_fields.append(name)
-            
-            if required_fields:
-                raise TypeError(f"Missing required fields: {', '.join(required_fields)}")
-            
-            # Check types of all arguments
-            hints = get_type_hints(cls)  # Use get_type_hints to resolve forward references
-            for name, value in kwargs.items():
-                if name in hints and value is not None:
-                    # Skip type checking for metadata if it's a string - will be handled in __post_init__
-                    if name == 'metadata' and isinstance(value, str):
-                        continue
-                    try:
-                        check_type(value, hints[name])
-                    except TypeError as e:
-                        raise TypeCheckError(str(e))
-            
-            # Initialize all fields with their defaults first
-            for field_name, field in all_fields.items():
-                if field_name not in kwargs:
-                    if hasattr(field.default_factory, '__call__'):
-                        # Field has a callable default_factory
-                        setattr(self, field_name, field.default_factory())
-                    elif field.default is not dataclass_field:
-                        # Field has a default value
-                        setattr(self, field_name, field.default)
-                    else:
-                        # Field has no default and is not provided
-                        setattr(self, field_name, None)
-            
-            # Then update with provided values
-            for name, value in kwargs.items():
-                setattr(self, name, value)
-            
-            # Call parent's __init__ with filtered kwargs
-            parent_fields = set()
-            for base in bases:
-                if hasattr(base, '__dataclass_fields__'):
-                    parent_fields.update(base.__dataclass_fields__.keys())
-            
-            parent_kwargs = {k: v for k, v in kwargs.items() if k in parent_fields}
-            super(cls, self).__init__(**parent_kwargs)
-            
-            # Call post_init to handle JSON parsing
-            if hasattr(self, '__post_init__'):
-                self.__post_init__()
-        cls.__init__ = type_checked_init
-        
-        # Register the model
-        mcs._models[name] = cls
-        
-        return cls
-    
-    @classmethod
-    def get_model(mcs, name: str) -> Optional[Type['MilvusModel']]:
-        """Get a registered model by name."""
-        return mcs._models.get(name)
-    
-    @classmethod
-    def get_all_models(mcs) -> List[Type['MilvusModel']]:
-        """Get all registered models."""
-        return list(mcs._models.values())
 
 class TypeCheckError(TypeError):
     """Raised when a type check fails."""
     pass
 
-class MilvusModel(ABC, metaclass=MilvusModelMeta):
-    """Base class for all Milvus models."""
+class MilvusModel(BaseMilvusModel, metaclass=MilvusModelMeta):
+    """Milvus model with database operations."""
     embedding: Optional[List[float]] = milvus_field(DataType.FLOAT_VECTOR, dim=1536, default=None)
     metadata: Dict[str, Any] = milvus_field(DataType.JSON, default_factory=dict)
     
     # Class variable to mark migration collections
     is_migration_collection: ClassVar[bool] = False
     
-    def __init__(self, **kwargs: Any) -> None:
-        """Initialize the model with the given fields.
+    @classmethod
+    def _get_collection(cls) -> Collection:
+        """Get the Milvus collection for this model."""
+        return MilvusConnection.get_collection(cls.collection_name())
+    
+    @classmethod
+    def load(cls) -> None:
+        """Load the collection into memory for faster queries.
+        
+        This is useful when you plan to perform multiple queries on the collection.
+        The collection will stay in memory until you call unload() or the session ends.
+        """
+        collection = cls._get_collection()
+        collection.load()
+    
+    @classmethod
+    def unload(cls) -> None:
+        """Unload the collection from memory.
+        
+        This frees up memory by removing the collection from RAM.
+        Subsequent queries will be slower until you call load() again.
+        """
+        collection = cls._get_collection()
+        collection.release()
+    
+    def save(self) -> bool:
+        """Save this model instance to Milvus.
+        If the model has an ID and exists, it will be updated.
+        If it doesn't exist or has no ID, it will be inserted.
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        collection = self._get_collection()
+        
+        # Convert model to dictionary
+        data = self.to_dict()
+        
+        # If we have an ID, try to update
+        if hasattr(self, 'id') and getattr(self, 'id'):
+            # Delete existing record
+            expr = f'id == "{self.id}"'
+            collection.delete(expr)
+        
+        # Insert the record
+        try:
+            collection.insert(data)
+            return True
+        except Exception as e:
+            print(f"Error saving model: {str(e)}")
+            return False
+    
+    @classmethod
+    def bulk_insert(cls: Type[T], models: List[T], batch_size: int = 100) -> bool:
+        """Insert multiple models in batches.
         
         Args:
-            **kwargs: Field values to set
+            models: List of model instances to insert
+            batch_size: Number of records to insert at once
+            
+        Returns:
+            True if all inserts were successful, False if any failed
         """
-        super().__init__()
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-    
-    def __post_init__(self):
-        """Convert metadata and extra_data to dict if they're JSON strings."""
-        # Handle metadata field
-        if isinstance(self.metadata, str):
-            try:
-                self.metadata = json.loads(self.metadata)
-            except json.JSONDecodeError:
-                self.metadata = {}
+        collection = cls._get_collection()
         
-        # Handle extra_data field if it exists
-        if hasattr(self, 'extra_data') and isinstance(self.extra_data, str):
+        # Convert all models to dictionaries
+        data = [model.to_dict() for model in models]
+        
+        # Insert in batches
+        for i in range(0, len(data), batch_size):
+            batch = data[i:i + batch_size]
             try:
-                self.extra_data = json.loads(self.extra_data)
-            except json.JSONDecodeError:
-                self.extra_data = {}
+                collection.insert(batch)
+            except Exception as e:
+                print(f"Error inserting batch: {str(e)}")
+                return False
+        
+        return True
+    
+    @classmethod
+    def bulk_upsert(cls: Type[T], models: List[T], batch_size: int = 100) -> bool:
+        """Update or insert multiple models in batches.
+        
+        Args:
+            models: List of model instances to upsert
+            batch_size: Number of records to process at once
+            
+        Returns:
+            True if all operations were successful, False if any failed
+        """
+        collection = cls._get_collection()
+        
+        # Group models by whether they have IDs
+        updates = []
+        inserts = []
+        for model in models:
+            if hasattr(model, 'id') and getattr(model, 'id'):
+                updates.append(model)
+            else:
+                inserts.append(model)
+        
+        # Process updates in batches
+        for i in range(0, len(updates), batch_size):
+            batch = updates[i:i + batch_size]
+            # Get IDs for this batch
+            ids = [model.id for model in batch]
+            expr = f'id in ["{"\",\"".join(ids)}"]'
+            
+            try:
+                # Delete existing records
+                collection.delete(expr)
+                # Insert updated records
+                collection.insert([model.to_dict() for model in batch])
+            except Exception as e:
+                print(f"Error upserting batch: {str(e)}")
+                return False
+        
+        # Process inserts in batches
+        if inserts:
+            try:
+                return cls.bulk_insert(inserts, batch_size)
+            except Exception as e:
+                print(f"Error inserting new records: {str(e)}")
+                return False
+        
+        return True
+    
+    def delete(self) -> bool:
+        """Delete this model instance from Milvus.
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        if not hasattr(self, 'id') or not getattr(self, 'id'):
+            return False
+            
+        collection = self._get_collection()
+        
+        try:
+            expr = f'id == "{self.id}"'
+            collection.delete(expr)
+            return True
+        except Exception as e:
+            print(f"Error deleting model: {str(e)}")
+            return False
+    
+    @classmethod
+    def delete_many(cls, expr: str) -> bool:
+        """Delete multiple models matching an expression.
+        
+        Args:
+            expr: Expression to match records to delete
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        collection = cls._get_collection()
+        
+        try:
+            collection.delete(expr)
+            return True
+        except Exception as e:
+            print(f"Error deleting models: {str(e)}")
+            return False
+    
+    @classmethod
+    def get_all(
+        cls: Type[T],
+        offset: int = 0,
+        limit: Optional[int] = None,
+        output_fields: Optional[List[str]] = None,
+        order_by: Optional[str] = None,
+        order_desc: bool = False
+    ) -> List[T]:
+        """Get all models with optional pagination and ordering.
+        
+        Args:
+            offset: Number of records to skip
+            limit: Maximum number of records to return. If None, returns up to 16384 records.
+            output_fields: Optional list of fields to return. If None, returns all fields.
+            order_by: Optional field to order by
+            order_desc: If True, order in descending order
+            
+        Returns:
+            List of model instances
+        """
+        collection = cls._get_collection()
+        
+        # Build query parameters
+        query_params = {
+            "expr": "",  # Empty string for no filtering
+            "output_fields": output_fields or ["*"],
+            "offset": offset,
+            "limit": min(limit or 16384, 16384)  # Always include a limit, max 16384
+        }
+            
+        # Add ordering if specified
+        if order_by:
+            order = "DESC" if order_desc else "ASC"
+            query_params["order_by"] = f"{order_by} {order}"
+        
+        # Execute query
+        results = collection.query(**query_params)
+        
+        return [cls.from_dict(cls._convert_hit_to_dict(result)) for result in results]
+    
+    @classmethod
+    def get_by_id(cls: Type[T], id: str, output_fields: Optional[List[str]] = None) -> Optional[T]:
+        """Get a single model by its ID.
+        
+        Args:
+            id: The ID to look up
+            output_fields: Optional list of fields to return. If None, returns all fields.
+            
+        Returns:
+            Model instance if found, None otherwise
+        """
+        collection = cls._get_collection()
+        
+        # Query by ID
+        expr = f'id == "{id}"'
+        results = collection.query(
+            expr=expr,
+            output_fields=output_fields or ['*']
+        )
+        
+        if not results:
+            return None
+            
+        return cls.from_dict(cls._convert_hit_to_dict(results[0]))
+    
+    @classmethod
+    def filter(cls: Type[T], output_fields: Optional[List[str]] = None, **kwargs) -> List[T]:
+        """Get models matching the given filters.
+        
+        Args:
+            output_fields: Optional list of fields to return. If None, returns all fields.
+            **kwargs: Field names and values to filter by
+            
+        Returns:
+            List of matching models
+        """
+        collection = cls._get_collection()
+        
+        # Build filter expression
+        conditions = []
+        for field, value in kwargs.items():
+            if isinstance(value, str):
+                conditions.append(f'{field} == "{value}"')
+            else:
+                conditions.append(f'{field} == {value}')
+        expr = ' && '.join(conditions)
+        
+        results = collection.query(
+            expr=expr,
+            output_fields=output_fields or ['*']
+        )
+        
+        return [cls.from_dict(cls._convert_hit_to_dict(result)) for result in results]
+    
+    @classmethod
+    def search_by_similarity(
+        cls: Type[T],
+        query_embedding: List[float],
+        limit: int = 5,
+        expr: Optional[str] = None,
+        metric_type: str = "L2",
+        search_params: Optional[Dict[str, Any]] = None,
+        output_fields: Optional[List[str]] = None
+    ) -> List[T]:
+        """Search for models by vector similarity.
+        
+        Args:
+            query_embedding: The embedding vector to search with
+            limit: Maximum number of results to return
+            expr: Optional filter expression
+            metric_type: Distance metric to use (L2 or IP)
+            search_params: Optional dictionary of search parameters (e.g. {"nlist": 1024, "nprobe": 10})
+                         If not provided, defaults to {"nprobe": 10}
+            output_fields: Optional list of fields to return. If None, returns all fields.
+            
+        Returns:
+            List of models sorted by similarity
+        """
+        collection = cls._get_collection()
+        
+        # Build search parameters
+        params = {
+            "metric_type": metric_type,
+            "params": search_params or {"nprobe": 10}
+        }
+        
+        results = collection.search(
+            data=[query_embedding],
+            anns_field="embedding",
+            param=params,
+            limit=limit,
+            expr=expr,
+            output_fields=output_fields or ["*"]
+        )
+        
+        return [cls.from_dict(cls._convert_hit_to_dict(hit)) for hit in results[0]]
     
     @classmethod
     @abstractmethod
@@ -232,11 +380,20 @@ class MilvusModel(ABC, metaclass=MilvusModelMeta):
         
         # Handle any other JSON fields
         for key, value in data.items():
-            if isinstance(value, str) and value.startswith('{') and value.endswith('}'):
-                try:
-                    data[key] = json.loads(value)
-                except json.JSONDecodeError:
-                    pass  # Not valid JSON, leave as string
+            if isinstance(value, str):
+                # Try to parse JSON fields
+                if value.startswith('{') and value.endswith('}'):
+                    try:
+                        data[key] = json.loads(value)
+                    except json.JSONDecodeError:
+                        pass  # Not valid JSON, leave as string
+                
+                # Try to parse datetime fields
+                if key in ['created_at', 'updated_at'] or key.endswith('_at'):
+                    try:
+                        data[key] = datetime.fromisoformat(value.replace('Z', '+00:00'))
+                    except (ValueError, TypeError):
+                        pass  # Not a valid datetime string, leave as string
         
         # Filter out class variables
         instance_data = {
@@ -266,4 +423,23 @@ class MilvusModel(ABC, metaclass=MilvusModelMeta):
     def deserialize_from_json(cls: Type[T], json_str: str) -> T:
         """Create model instance from JSON string."""
         data = json.loads(json_str)
-        return cls.from_dict(data) 
+        return cls.from_dict(data)
+    
+    @staticmethod
+    def _convert_hit_to_dict(data: Union[Dict[str, Any], Hit]) -> Dict[str, Any]:
+        """Convert Hit object or dictionary to properly typed dictionary.
+        
+        Args:
+            data: Raw data from Milvus, either a dict or Hit object
+            
+        Returns:
+            Dictionary with properly typed values
+        """
+        # If data is a Hit object, get its fields
+        if isinstance(data, Hit):
+            data = dict(data.fields)
+        
+        if 'embedding' in data:
+            # Convert embedding values to float
+            data['embedding'] = [float(x) for x in data['embedding']]
+        return data 

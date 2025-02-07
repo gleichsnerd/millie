@@ -1,5 +1,5 @@
 """Decorators for Milvus models."""
-from typing import Type, TypeVar, Callable
+from typing import Type, TypeVar
 from .milvus_model import MilvusModel
 
 T = TypeVar('T', bound=MilvusModel)
