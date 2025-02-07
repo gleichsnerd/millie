@@ -1,11 +1,9 @@
 import os
 import pytest
-from dataclasses import dataclass
 from pymilvus import FieldSchema, DataType
 
 from millie.db.migration_manager import MigrationManager
 from millie.orm.milvus_model import MilvusModel
-from millie.orm.fields import field
 from millie.orm.milvus_model import MilvusModel
 
 # Test Models

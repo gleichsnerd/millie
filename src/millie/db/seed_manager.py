@@ -38,12 +38,15 @@ class SeedManager:
                 if isinstance(node, ast.FunctionDef):
                     for decorator in node.decorator_list:
                         if isinstance(decorator, ast.Name) and decorator.id == 'milvus_seeder':
+                            print(f"Found seeder function {node.name} in {file_path}")
                             return True
                         elif isinstance(decorator, ast.Call):
                             if isinstance(decorator.func, ast.Name) and decorator.func.id == 'milvus_seeder':
+                                print(f"Found seeder function {node.name} in {file_path}")
                                 return True
             return False
-        except Exception:
+        except Exception as e:
+            print(f"Error checking for seeder in {file_path}: {e}")
             return False
         
     def discover_seeders(self) -> List[Callable]:
@@ -54,19 +57,25 @@ class SeedManager:
         """
         # Clear existing seeders before discovery
         _SEEDERS.clear()
+        print(f"\nScanning for seeders in {self.cwd}")
         
         # Add current working directory and src directory to Python path
         import sys
         if self.cwd not in sys.path:
             sys.path.insert(0, self.cwd)
+            print(f"Added {self.cwd} to Python path")
             
         # Also add the parent directory to handle package imports
         parent_dir = os.path.dirname(self.cwd)
         if parent_dir not in sys.path:
             sys.path.insert(0, parent_dir)
+            print(f"Added {parent_dir} to Python path")
             
         # Find all Python files recursively
-        for file_path in glob.glob(os.path.join(self.cwd, "**/*.py"), recursive=True):
+        python_files = list(glob.glob(os.path.join(self.cwd, "**/*.py"), recursive=True))
+        print(f"\nFound {len(python_files)} Python files to scan")
+        
+        for file_path in python_files:
             if not os.path.isfile(file_path):
                 continue
                 
@@ -74,6 +83,7 @@ class SeedManager:
             if "venv" in file_path or "site-packages" in file_path:
                 continue
                 
+            print(f"\nChecking {file_path}")
             # Only process files that have the milvus_seeder decorator
             if not self._has_seeder_decorator(file_path):
                 continue
@@ -81,6 +91,7 @@ class SeedManager:
             try:
                 # Import the module
                 module_name = os.path.splitext(os.path.basename(file_path))[0]
+                print(f"Importing module {module_name} from {file_path}")
                 spec = importlib.util.spec_from_file_location(module_name, file_path)
                 if not spec or not spec.loader:
                     continue
@@ -92,7 +103,9 @@ class SeedManager:
             except Exception as e:
                 print(f"Warning: Failed to process {file_path}: {e}")
                 
-        return list(_SEEDERS.values())
+        seeders = list(_SEEDERS.values())
+        print(f"\nDiscovered {len(seeders)} seeders: {[s.__name__ for s in seeders]}")
+        return seeders
         
     def run_seeders(self) -> Dict[str, Any]:
         """Run all discovered seeders.
@@ -115,8 +128,9 @@ class SeedManager:
         # First run all seeders and collect their entities
         for seeder in seeders:
             try:
-                print(f"Running seeder: {seeder.__name__}")
+                print(f"\nRunning seeder: {seeder.__name__}")
                 seeded_entities = seeder()
+                print(f"Seeder returned {len(seeded_entities) if seeded_entities else 0} entities")
                 
                 # Handle both single entities and lists
                 if not isinstance(seeded_entities, list):
@@ -127,6 +141,7 @@ class SeedManager:
                     if not isinstance(entity, MilvusModel):
                         raise TypeError(f"Seeder {seeder.__name__} returned invalid entity type: {type(entity)}")
                     collection_name = entity.__class__.collection_name()
+                    print(f"Adding entity to collection {collection_name}")
                     entities_by_collection[collection_name].append(entity)
                     
                 results[seeder.__name__] = {
@@ -144,9 +159,12 @@ class SeedManager:
                 print(f"❌ {seeder.__name__}: {error_msg}")
                 continue
         
+        print(f"\nProcessing entities for {len(entities_by_collection)} collections: {list(entities_by_collection.keys())}")
+        
         # Now upsert all entities into their respective collections
         for collection_name, entities in entities_by_collection.items():
             try:
+                print(f"\nProcessing collection {collection_name} with {len(entities)} entities")
                 # Get the model class from the first entity
                 model_class = entities[0].__class__
                 

@@ -4,16 +4,17 @@ from dataclasses import field as dataclass_field
 from datetime import datetime
 from pymilvus import DataType, FieldSchema
 
+from millie.orm.fields import milvus_field
 from millie.orm.milvus_model import MilvusModel
 from millie.orm.decorators import MillieMigrationModel
 
 @MillieMigrationModel
 class MigrationHistoryModel(MilvusModel):
     """Model for tracking migration history."""
-    id: str
-    name: str
-    version: str
-    applied_at: str = dataclass_field(default_factory=lambda: datetime.now().isoformat())
+    id: str = milvus_field(DataType.VARCHAR, max_length=100, is_primary=True)
+    name: str = milvus_field(DataType.VARCHAR, max_length=100)
+    version: str = milvus_field(DataType.VARCHAR, max_length=50)
+    applied_at: str = milvus_field(DataType.VARCHAR, max_length=50)
     
     @classmethod
     def collection_name(cls) -> str:
