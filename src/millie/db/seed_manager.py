@@ -75,6 +75,11 @@ class SeedManager:
         python_files = list(glob.glob(os.path.join(self.cwd, "**/*.py"), recursive=True))
         print(f"\nFound {len(python_files)} Python files to scan")
         
+        # Clear sys.modules of any previously imported seeder modules
+        for module_name in list(sys.modules.keys()):
+            if module_name.startswith('seeder_') or 'seeders' in module_name.lower():
+                del sys.modules[module_name]
+        
         for file_path in python_files:
             if not os.path.isfile(file_path):
                 continue
@@ -90,7 +95,7 @@ class SeedManager:
                 
             try:
                 # Import the module
-                module_name = os.path.splitext(os.path.basename(file_path))[0]
+                module_name = f"seeder_{os.path.splitext(os.path.basename(file_path))[0]}"
                 print(f"Importing module {module_name} from {file_path}")
                 spec = importlib.util.spec_from_file_location(module_name, file_path)
                 if not spec or not spec.loader:
@@ -130,7 +135,15 @@ class SeedManager:
             try:
                 print(f"\nRunning seeder: {seeder.__name__}")
                 seeded_entities = seeder()
-                print(f"Seeder returned {len(seeded_entities) if seeded_entities else 0} entities")
+                
+                # Skip if seeder returned None
+                if seeded_entities is None:
+                    results[seeder.__name__] = {
+                        "status": "success",
+                        "count": 0
+                    }
+                    print(f"✅ {seeder.__name__} completed successfully (no entities)")
+                    continue
                 
                 # Handle both single entities and lists
                 if not isinstance(seeded_entities, list):

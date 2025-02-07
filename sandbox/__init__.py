@@ -1,4 +1,4 @@
-"""Sandbox package for testing and development."""
+"""Sandbox package for examples and testing."""
 from sandbox.models import RuleModel, RuleViolationModel
 
 __all__ = ['RuleModel', 'RuleViolationModel']
