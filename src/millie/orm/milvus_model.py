@@ -130,16 +130,13 @@ class MilvusModel(BaseMilvusModel, metaclass=MilvusModelMeta):
             batch = updates[i:i + batch_size]
             # Get IDs for this batch
             ids = [model.id for model in batch]
-            expr = f'id in ["{"\",\"".join(ids)}"]'
-            
-            try:
-                # Delete existing records
+            # Delete existing records
+            if hasattr(self, 'id') and getattr(self, 'id'):
+                # Delete existing record
+                expr = 'id in ["' + '","'.join(ids) + '"]'
                 collection.delete(expr)
-                # Insert updated records
-                collection.insert([model.to_dict() for model in batch])
-            except Exception as e:
-                print(f"Error upserting batch: {str(e)}")
-                return False
+            # Insert updated records
+            collection.insert([model.to_dict() for model in batch])
         
         # Process inserts in batches
         if inserts:
