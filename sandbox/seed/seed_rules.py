@@ -1,7 +1,7 @@
 """Example seed function for RuleViolation model."""
 from millie.db.milvus_seeder import milvus_seeder
+from millie.embedders.openai import generate_embedding_text_embedding_3_small
 from sandbox.models.rule import RuleModel
-from sandbox.models.rule_violation import RuleViolationModel
 
 @milvus_seeder
 def seed_rules():
@@ -10,7 +10,6 @@ def seed_rules():
     rules = [
         RuleModel(
             id="rule_1",
-            embedding=[0.1] * 1536,  # Example 1536-dim embedding
             name="Use of hardcoded credentials",
             type="security",
             description="Use of hardcoded credentials",
@@ -18,11 +17,11 @@ def seed_rules():
             metadata={
                 "framework": "general",
                 "category": "security"
-            }
+            },
+            embedding=generate_embedding_text_embedding_3_small("Use of hardcoded credentials")
         ),
         RuleModel(
             id="rule_2",
-            embedding=[0.2] * 1536,  # Example 1536-dim embedding
             name="Inefficient database query pattern",
             type="performance",
             description="Inefficient database query pattern",
@@ -30,11 +29,11 @@ def seed_rules():
             metadata={
                 "framework": "django",
                 "category": "performance"
-            }
+            },
+            embedding=generate_embedding_text_embedding_3_small("Inefficient database query pattern")
         ),
         RuleModel(
             id="rule_3",
-            embedding=[0.3] * 1536,  # Example 1536-dim embedding
             name="Missing error handling",
             type="reliability",
             description="Missing error handling",
@@ -42,7 +41,8 @@ def seed_rules():
             metadata={
                 "framework": "general",
                 "category": "reliability"
-            }
+            },
+            embedding=generate_embedding_text_embedding_3_small("Missing error handling")
         )
     ]
     
