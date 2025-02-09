@@ -57,10 +57,6 @@ class MilvusModel(ABC):
     3. Model registration for tracking
     4. Milvus collection operations (CRUD)
     
-    All subclasses must define:
-    - id: str = milvus_field(DataType.VARCHAR, max_length=100, is_primary=True)
-    - embedding: Optional[List[float]] = milvus_field(DataType.FLOAT_VECTOR, dim=1536)
-    - metadata: Dict[str, Any] = milvus_field(DataType.JSON)
     """
     
     # Class variable to mark migration collections
@@ -73,6 +69,14 @@ class MilvusModel(ABC):
         register_model(cls)
         # Make sure subclasses are also dataclasses
         dataclass(cls, kw_only=True)
+        
+        # Add type hints for the constructor
+        cls.__init__.__annotations__ = get_type_hints(cls)
+    
+    @classmethod
+    def __class_getitem__(cls, key):
+        """Support for type hints like MilvusModel[T]."""
+        return cls
     
     def __post_init__(self):
         """Validate field types after initialization."""
