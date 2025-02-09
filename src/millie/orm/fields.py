@@ -12,6 +12,17 @@ class MilvusFieldInfo:
     def __init__(self, data_type: DataType, **kwargs):
         self.data_type = data_type
         self.kwargs = kwargs
+        
+    @property
+    def dtype(self) -> DataType:
+        """Get the field's data type."""
+        return self.data_type
+        
+    def __getattr__(self, name):
+        """Get additional field configuration."""
+        if name in self.kwargs:
+            return self.kwargs[name]
+        raise AttributeError(f"'MilvusFieldInfo' object has no attribute '{name}'")
 
 @overload
 def milvus_field(data_type: DataType, *, default: T, **kwargs) -> T: ...

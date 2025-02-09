@@ -82,10 +82,10 @@ class Schema:
         if schema_def is None:
             raise ValueError(f"Model {model_class.__name__} schema() method returned None")
         
-        if not isinstance(schema_def, dict) or 'fields' not in schema_def:
-            raise ValueError(f"Model {model_class.__name__} schema() must return a dict with 'fields' key")
+        if not isinstance(schema_def, Schema) or not hasattr(schema_def, 'fields'):
+            raise ValueError(f"Model {model_class.__name__} schema() must return a Schema instance")
             
-        fields = [SchemaField.from_field_schema(f) for f in schema_def['fields']]
+        fields = [SchemaField.from_field_schema(f) for f in schema_def.fields]
         
         return cls(
             name=model_class.__name__,

@@ -105,7 +105,7 @@ class SchemaHistory:
     
     def build_initial_schema(self, model_cls: Type[MilvusModel]) -> Schema:
         schema_def = model_cls.schema()
-        if not schema_def or 'fields' not in schema_def:
+        if not schema_def or not hasattr(schema_def, 'fields'):
             return Schema(
                 name=model_cls.__name__,
                 collection_name=model_cls.collection_name(),
@@ -115,7 +115,7 @@ class SchemaHistory:
         
         # For initial migration, include all fields
         added_fields = []
-        for field_schema in schema_def['fields']:
+        for field_schema in schema_def.fields:
             added_fields.append(SchemaField.from_field_schema(field_schema))
         
         # Save the initial schema to history

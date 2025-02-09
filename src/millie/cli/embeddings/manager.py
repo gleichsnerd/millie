@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import sys
 import click
 from click import echo
 
@@ -32,11 +33,11 @@ def update():
             for name, result in results.items():
                 if result.get("status") == "error":
                     echo(f"  - {name}: {result.get('error')}")
-            return 1
+            sys.exit(1)
         else:
             echo("✅ All embeddings updated successfully!")
-            return 0
+            sys.exit(0)
             
     except Exception as e:
         echo(f"❌ Error updating embeddings: {str(e)}", err=True)
-        return 1 
+        sys.exit(1) 
