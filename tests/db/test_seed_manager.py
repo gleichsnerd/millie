@@ -1,9 +1,10 @@
 """Tests for the SeedManager class."""
 import os
+import sys
 import pytest
 from unittest.mock import patch, MagicMock
 from millie.db.seed_manager import SeedManager
-from millie.db.milvus_seeder import milvus_seeder, _SEEDERS
+from millie.db.milvus_seeder import _SEEDERS
 
 @pytest.fixture
 def temp_dir(tmp_path):
@@ -143,22 +144,16 @@ def test_run_seeders_mixed_results(seed_manager, temp_dir, mock_milvus):
     seeder_code = '''
 from millie.db.milvus_seeder import milvus_seeder
 from millie.orm.milvus_model import MilvusModel
+from millie.orm.fields import milvus_field
+from pymilvus import DataType
 
 class TestModel(MilvusModel):
-    name: str
+    id: str = milvus_field(DataType.VARCHAR, max_length=100, is_primary=True)
+    name: str = milvus_field(DataType.VARCHAR, max_length=100)
     
     @classmethod
     def collection_name(cls) -> str:
         return "test"
-        
-    @classmethod
-    def schema(cls) -> dict:
-        return {
-            "fields": [
-                {"name": "id", "type": "str", "is_primary": True},
-                {"name": "name", "type": "str"}
-            ]
-        }
 
 @milvus_seeder
 def success_one():
@@ -204,4 +199,205 @@ def test_import_error_handling(seed_manager, mock_glob, mock_import):
     
     # Should not raise an exception
     seeders = seed_manager.discover_seeders()
-    assert len(seeders) == 0 
+    assert len(seeders) == 0
+
+def test_has_seeder_decorator_simple(seed_manager, temp_dir):
+    """Test detecting simple seeder decorator."""
+    code = '''
+from millie.db.milvus_seeder import milvus_seeder
+
+@milvus_seeder
+def seed_data():
+    pass
+'''
+    file_path = os.path.join(temp_dir, 'simple_seeder.py')
+    with open(file_path, 'w') as f:
+        f.write(code)
+    
+    assert seed_manager._has_seeder_decorator(file_path)
+
+def test_has_seeder_decorator_with_args(seed_manager, temp_dir):
+    """Test detecting seeder decorator with arguments."""
+    code = '''
+from millie.db.milvus_seeder import milvus_seeder
+
+@milvus_seeder()
+def seed_data():
+    pass
+'''
+    file_path = os.path.join(temp_dir, 'arg_seeder.py')
+    with open(file_path, 'w') as f:
+        f.write(code)
+    
+    assert seed_manager._has_seeder_decorator(file_path)
+
+def test_has_seeder_decorator_no_seeder(seed_manager, temp_dir):
+    """Test file without seeder decorator."""
+    code = '''
+def regular_function():
+    pass
+'''
+    file_path = os.path.join(temp_dir, 'no_seeder.py')
+    with open(file_path, 'w') as f:
+        f.write(code)
+    
+    assert not seed_manager._has_seeder_decorator(file_path)
+
+def test_has_seeder_decorator_invalid_syntax(seed_manager, temp_dir):
+    """Test handling invalid Python syntax."""
+    code = '''
+This is not valid Python code
+'''
+    file_path = os.path.join(temp_dir, 'invalid.py')
+    with open(file_path, 'w') as f:
+        f.write(code)
+    
+    assert not seed_manager._has_seeder_decorator(file_path)
+
+def test_discover_seeders_with_python_path(seed_manager, temp_dir):
+    """Test seeder discovery with Python path manipulation."""
+    # Create a package structure
+    package_dir = os.path.join(temp_dir, 'mypackage')
+    os.makedirs(package_dir)
+    
+    # Create an __init__.py
+    with open(os.path.join(package_dir, '__init__.py'), 'w') as f:
+        f.write('')
+    
+    # Create a module with a seeder
+    seeder_code = '''
+from millie.db.milvus_seeder import milvus_seeder
+
+@milvus_seeder
+def package_seeder():
+    return "package"
+'''
+    with open(os.path.join(package_dir, 'seeder.py'), 'w') as f:
+        f.write(seeder_code)
+    
+    # Run discovery
+    _SEEDERS.clear()
+    seeders = seed_manager.discover_seeders()
+    
+    # Verify Python path was modified
+    assert temp_dir in sys.path
+    assert os.path.dirname(temp_dir) in sys.path
+    assert len(seeders) == 1
+
+def test_discover_seeders_skip_venv(seed_manager, temp_dir):
+    """Test that venv and site-packages are skipped."""
+    # Create venv structure
+    venv_dir = os.path.join(temp_dir, 'venv')
+    os.makedirs(venv_dir)
+    
+    # Create a seeder in venv that should be skipped
+    seeder_code = '''
+from millie.db.milvus_seeder import milvus_seeder
+
+@milvus_seeder
+def venv_seeder():
+    return "venv"
+'''
+    with open(os.path.join(venv_dir, 'seeder.py'), 'w') as f:
+        f.write(seeder_code)
+    
+    # Create a regular seeder that should be found
+    with open(os.path.join(temp_dir, 'regular_seeder.py'), 'w') as f:
+        f.write(seeder_code)
+    
+    _SEEDERS.clear()
+    seeders = seed_manager.discover_seeders()
+    
+    # Only the regular seeder should be found
+    assert len(seeders) == 1
+
+def test_run_seeders_multiple_collections(seed_manager, temp_dir, mock_milvus):
+    """Test running seeders that seed multiple collections."""
+    _SEEDERS.clear()
+    
+    seeder_code = '''
+from millie.db.milvus_seeder import milvus_seeder
+from millie.orm.milvus_model import MilvusModel
+from millie.orm.fields import milvus_field
+from pymilvus import DataType
+
+class UserModel(MilvusModel):
+    id: str = milvus_field(DataType.VARCHAR, max_length=100, is_primary=True)
+    name: str = milvus_field(DataType.VARCHAR, max_length=100)
+    
+    @classmethod
+    def collection_name(cls) -> str:
+        return "users"
+
+class PostModel(MilvusModel):
+    id: str = milvus_field(DataType.VARCHAR, max_length=100, is_primary=True)
+    title: str = milvus_field(DataType.VARCHAR, max_length=100)
+    
+    @classmethod
+    def collection_name(cls) -> str:
+        return "posts"
+
+@milvus_seeder
+def seed_multiple():
+    return [
+        UserModel(id="1", name="test_user"),
+        PostModel(id="1", title="test_post")
+    ]
+'''
+    with open(os.path.join(temp_dir, 'multi_seeder.py'), 'w') as f:
+        f.write(seeder_code)
+    
+    results = seed_manager.run_seeders()
+    
+    assert "seed_multiple" in results
+    assert results["seed_multiple"]["status"] == "success"
+    assert results["seed_multiple"]["count"] == 2
+    
+    # Verify Milvus operations were called for both collections
+    assert mock_milvus['collection'].insert.call_count == 2
+
+def test_run_seeders_none_return(seed_manager, temp_dir, mock_milvus):
+    """Test running a seeder that returns None."""
+    _SEEDERS.clear()
+    
+    seeder_code = '''
+from millie.db.milvus_seeder import milvus_seeder
+
+@milvus_seeder
+def none_seeder():
+    return None
+'''
+    with open(os.path.join(temp_dir, 'none_seeder.py'), 'w') as f:
+        f.write(seeder_code)
+    
+    results = seed_manager.run_seeders()
+    
+    assert "none_seeder" in results
+    assert results["none_seeder"]["status"] == "success"
+    assert results["none_seeder"]["count"] == 0
+    
+    # Verify no Milvus operations were called
+    mock_milvus['collection'].insert.assert_not_called()
+
+def test_run_seeders_invalid_entity(seed_manager, temp_dir, mock_milvus):
+    """Test running a seeder that returns an invalid entity type."""
+    _SEEDERS.clear()
+    
+    seeder_code = '''
+from millie.db.milvus_seeder import milvus_seeder
+
+@milvus_seeder
+def invalid_seeder():
+    return "not a model instance"
+'''
+    with open(os.path.join(temp_dir, 'invalid_seeder.py'), 'w') as f:
+        f.write(seeder_code)
+    
+    results = seed_manager.run_seeders()
+    
+    assert "invalid_seeder" in results
+    assert results["invalid_seeder"]["status"] == "error"
+    assert "invalid entity type" in results["invalid_seeder"]["error"].lower()
+    
+    # Verify no Milvus operations were called
+    mock_milvus['collection'].insert.assert_not_called() 
