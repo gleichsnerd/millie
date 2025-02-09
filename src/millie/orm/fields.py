@@ -1,5 +1,5 @@
 from dataclasses import field as dataclass_field, InitVar
-from typing import Any, Callable, TypeVar, overload, Union, get_args, get_origin
+from typing import Any, Callable, TypeVar, overload, Union, get_args, get_origin, Optional
 from pymilvus import DataType
 
 T = TypeVar('T')
@@ -34,7 +34,7 @@ def milvus_field(data_type: DataType, *, default_factory: Callable[[], T], **kwa
 def milvus_field(data_type: DataType, *, default: Callable[..., T], **kwargs) -> T: ...
 
 @overload
-def milvus_field(data_type: DataType, **kwargs) -> Any: ...
+def milvus_field(data_type: DataType, *, max_length: Optional[int] = None, dim: Optional[int] = None, is_primary: bool = False, default: Optional[Any] = None, default_factory: Optional[Callable[[], Any]] = None, **kwargs) -> Any: ...
 
 def milvus_field(data_type: DataType, *, default=None, default_factory=None, **kwargs):
     """Create a field with Milvus configuration.
