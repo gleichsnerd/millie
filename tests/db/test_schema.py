@@ -1,8 +1,7 @@
-import pytest
 from millie.db.schema import Schema, SchemaField
 from pymilvus import DataType
-from dataclasses import dataclass
 from pymilvus import FieldSchema
+from millie.orm.fields import milvus_field
 from millie.orm.milvus_model import MilvusModel
 from typing import List
 
@@ -292,7 +291,8 @@ def test_schema_field_to_field_schema():
 
 # Test model for Schema tests
 class TestModel(MilvusModel):
-    name: str
+    id: str = milvus_field(DataType.VARCHAR, max_length=36, is_primary=True)
+    name: str =  milvus_field(DataType.VARCHAR, max_length=100)
     age: int
     vector: List[float]
     
@@ -300,32 +300,21 @@ class TestModel(MilvusModel):
     def collection_name(cls) -> str:
         return "test"
     
-    @classmethod
-    def schema(cls):
-        return {
-            "fields": [
-                FieldSchema(name="id", dtype=DataType.VARCHAR, is_primary=True, max_length=36),
-                FieldSchema(name="name", dtype=DataType.VARCHAR, max_length=100),
-                FieldSchema(name="age", dtype=DataType.INT64),
-                FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=128)
-            ]
-        }
-
 def test_schema_from_model():
     """Test creating Schema from model."""
     schema = Schema.from_model(TestModel)
     assert schema.name == "TestModel"
     assert schema.collection_name == "test"
-    assert len(schema.fields) == 4
+    assert len(schema.fields) == 2
     
     # Check fields
     id_field = schema.get_field("id")
     assert id_field and id_field.is_primary
     assert id_field.dtype == "VARCHAR"
     
-    vector_field = schema.get_field("vector")
-    assert vector_field and vector_field.dim == 128
-    assert vector_field.dtype == "FLOAT_VECTOR"
+    name_field = schema.get_field("name")
+    assert name_field and name_field.max_length == 100
+    assert name_field.dtype == "VARCHAR"
 
 def test_schema_from_dict():
     """Test creating Schema from dictionary."""

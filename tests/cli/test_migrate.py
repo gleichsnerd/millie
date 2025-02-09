@@ -1,16 +1,10 @@
-import os
 import pytest
 import click
 from click.testing import CliRunner
 from unittest.mock import patch, MagicMock, mock_open
-from pymilvus import FieldSchema, DataType
 
-from millie.cli.router import cli, add_millie_commands
-from millie.db.migration_history import MigrationHistoryModel
-from millie.db.schema import Schema, SchemaField
-from millie.db.schema_history import SchemaHistory
-from millie.orm.milvus_model import MilvusModel
-from millie.orm import MilvusModel
+from millie.cli.router import add_millie_commands
+from millie.db.schema import SchemaField
 from tests.util import click_skip_py310
 
 @pytest.fixture

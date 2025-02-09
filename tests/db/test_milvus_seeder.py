@@ -1,5 +1,4 @@
 """Tests for the milvus_seeder decorator."""
-import pytest
 from millie.db.milvus_seeder import milvus_seeder, _SEEDERS
 
 def test_seeder_registration():

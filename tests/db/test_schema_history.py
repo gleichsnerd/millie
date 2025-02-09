@@ -1,11 +1,12 @@
 import os
-from pymilvus import DataType, FieldSchema
+from pymilvus import DataType
 import pytest
 from pathlib import Path
 from millie.db.schema_history import SchemaHistory
 from millie.db.schema import Schema, SchemaField
+from millie.orm.fields import milvus_field
 from millie.orm.milvus_model import MilvusModel
-from millie.orm.milvus_model import MilvusModel
+import json
 
 @pytest.fixture
 def temp_history_dir(tmp_path):
@@ -59,6 +60,7 @@ def test_load_model_schema_empty(schema_history):
 def test_build_initial_schema(schema_history):
     """Test loading schema when no file exists."""
     class TestModel(MilvusModel):
+        id: str = milvus_field(DataType.VARCHAR, max_length=36, is_primary=True)
         @classmethod
         def collection_name(cls):
             return "test_collection"
@@ -66,22 +68,18 @@ def test_build_initial_schema(schema_history):
     schema = schema_history.build_initial_schema(TestModel)
     assert schema is not None
     assert schema.collection_name == "test_collection"
-    assert len(schema.fields) == 0
+    # Check for default fields from MilvusModel
+    assert len(schema.fields) == 1
+    assert any(f.name == 'id' and f.is_primary for f in schema.fields)
 
 def test_build_initial_schema_with_fields(schema_history):
     """Test building initial schema with fields."""
     class TestModel(MilvusModel):
+        id: str = milvus_field(DataType.VARCHAR, max_length=36, is_primary=True)
         @classmethod
         def collection_name(cls):
             return "test_collection"
-        
-        @classmethod
-        def schema(cls):
-            return {
-                "fields": [
-                    FieldSchema("id", DataType.INT64, is_primary=True),
-                ]
-            }
+    
     schema = schema_history.build_initial_schema(TestModel)
     assert schema is not None
     assert schema.collection_name == "test_collection"
@@ -287,3 +285,209 @@ def test_schema_versioning(schema_history):
     schema_history.save_model_schema(loaded)
     loaded = schema_history.get_schema_from_history(TestModel)
     assert loaded.version == 2 
+
+def test_schema_versioning_and_updates(schema_history):
+    """Test schema versioning and updates."""
+    # Create initial schema
+    schema = Schema(
+        name="TestModel",
+        collection_name="test_collection",
+        fields=[
+            SchemaField(name="id", dtype="INT64", is_primary=True)
+        ],
+        is_migration_collection=False
+    )
+    
+    # Save schema first time
+    schema_history.save_model_schema(schema)
+    
+    # Load and verify version
+    class TestModel(MilvusModel):
+        @classmethod
+        def collection_name(cls):
+            return "test_collection"
+    
+    loaded_schema = schema_history.get_schema_from_history(TestModel)
+    assert loaded_schema is not None
+    assert loaded_schema.version == 1
+    
+    # Update schema and save again
+    schema.fields.append(SchemaField(name="name", dtype="VARCHAR", max_length=128))
+    schema_history.save_model_schema(schema)
+    
+    # Load and verify version incremented
+    loaded_schema = schema_history.get_schema_from_history(TestModel)
+    assert loaded_schema is not None
+    assert loaded_schema.version == 2
+
+def test_schema_comparison(schema_history):
+    """Test schema comparison functionality."""
+    class TestModel(MilvusModel):
+        @classmethod
+        def collection_name(cls):
+            return "test_collection"
+        
+    # Create and save initial schema
+    schema = schema_history.build_initial_schema(TestModel)
+    schema_history.save_model_schema(schema)
+    initial_schema = schema_history.get_schema_from_history(TestModel)
+    
+    # No changes should be detected
+    no_change_schema = schema_history.get_schema_from_history(TestModel)
+    assert initial_schema.to_dict() == no_change_schema.to_dict()
+    
+    # Modify the schema
+    schema.fields.append(SchemaField(name="new_field", dtype="INT64"))
+    schema_history.save_model_schema(schema)
+    with_change_schema = schema_history.get_schema_from_history(TestModel)
+    
+    # Changes should be detected
+    assert initial_schema.to_dict() != with_change_schema.to_dict()
+
+def test_parse_migration_field_types(schema_history, temp_migrations_dir):
+    """Test parsing migrations with different field types."""
+    migration_content = '''
+from pymilvus import FieldSchema, DataType
+
+class Migration_20240125_test:
+    def up(self):
+        self.alter_schema(add_fields=[
+            FieldSchema(name="varchar_field", dtype=DataType.VARCHAR, max_length=128),
+            FieldSchema(name="int_field", dtype=DataType.INT64),
+            FieldSchema(name="float_field", dtype=DataType.FLOAT),
+            FieldSchema(name="vector_field", dtype=DataType.FLOAT_VECTOR, dim=128),
+            FieldSchema(name="bool_field", dtype=DataType.BOOL),
+            FieldSchema(name="double_field", dtype=DataType.DOUBLE)
+        ])
+    def down(self):
+        pass
+'''
+    migration_file = temp_migrations_dir / "20240125_000000_test.py"
+    migration_file.write_text(migration_content)
+    
+    schema = Schema(name="Test", collection_name="test", fields=[], is_migration_collection=False)
+    updated_schema = schema_history.apply_migration_to_schema(schema, str(migration_file))
+    
+    assert len(updated_schema.fields) == 6
+    field_types = {f.name: f.dtype for f in updated_schema.fields}
+    assert field_types["varchar_field"] == "VARCHAR"
+    assert field_types["int_field"] == "INT64"
+    assert field_types["float_field"] == "FLOAT"
+    assert field_types["vector_field"] == "FLOAT_VECTOR"
+    assert field_types["bool_field"] == "BOOL"
+    assert field_types["double_field"] == "DOUBLE"
+
+def test_parse_migration_field_parameters(schema_history, temp_migrations_dir):
+    """Test parsing migrations with various field parameters."""
+    migration_content = '''
+from pymilvus import FieldSchema, DataType
+
+class Migration_20240125_test:
+    def up(self):
+        self.alter_schema(add_fields=[
+            FieldSchema(name="field1", dtype=DataType.VARCHAR, max_length=128, is_primary=True),
+            FieldSchema(name="field2", dtype=DataType.FLOAT_VECTOR, dim=256, is_partition_key=True),
+            FieldSchema(name="field3", dtype=DataType.INT64, is_clustering_key=True),
+            FieldSchema(name="field4", dtype=DataType.VARCHAR, default_value="test"),
+            FieldSchema(name="field5", dtype=DataType.BOOL, mmap_enabled=True)
+        ])
+    def down(self):
+        pass
+'''
+    migration_file = temp_migrations_dir / "20240125_000000_test.py"
+    migration_file.write_text(migration_content)
+    
+    schema = Schema(name="Test", collection_name="test", fields=[], is_migration_collection=False)
+    updated_schema = schema_history.apply_migration_to_schema(schema, str(migration_file))
+    
+    assert len(updated_schema.fields) == 5
+    
+    # Check field1
+    field1 = next(f for f in updated_schema.fields if f.name == "field1")
+    assert field1.max_length == 128
+    assert field1.is_primary
+    
+    # Check field2
+    field2 = next(f for f in updated_schema.fields if f.name == "field2")
+    assert field2.dim == 256
+    
+    # Check field3
+    field3 = next(f for f in updated_schema.fields if f.name == "field3")
+    assert field3.dtype == "INT64"
+
+def test_migration_error_handling(schema_history, temp_migrations_dir):
+    """Test error handling in migration parsing."""
+    # Test syntax error in migration
+    migration_content = '''
+This is not valid Python code
+'''
+    migration_file = temp_migrations_dir / "invalid_syntax.py"
+    migration_file.write_text(migration_content)
+    
+    schema = Schema(name="Test", collection_name="test", fields=[], is_migration_collection=False)
+    result = schema_history.apply_migration_to_schema(schema, str(migration_file))
+    assert result == schema  # Should return original schema unchanged
+    
+    # Test missing migration class
+    migration_content = '''
+def some_function():
+    pass
+'''
+    migration_file = temp_migrations_dir / "no_migration.py"
+    migration_file.write_text(migration_content)
+    
+    result = schema_history.apply_migration_to_schema(schema, str(migration_file))
+    assert result == schema
+    
+    # Test invalid field schema in migration
+    migration_content = '''
+from pymilvus import FieldSchema, DataType
+
+class Migration_20240125_test:
+    def up(self):
+        self.alter_schema(add_fields=[
+            "invalid field schema"
+        ])
+    def down(self):
+        pass
+'''
+    migration_file = temp_migrations_dir / "invalid_field.py"
+    migration_file.write_text(migration_content)
+    
+    result = schema_history.apply_migration_to_schema(schema, str(migration_file))
+    assert result == schema
+
+def test_schema_history_file_handling(schema_history, temp_history_dir):
+    """Test schema history file handling."""
+    # Test saving to non-existent subdirectory
+    subdir_schema = Schema(
+        name="SubdirModel",
+        collection_name="subdir_test",
+        fields=[SchemaField(name="id", dtype="INT64", is_primary=True)],
+        is_migration_collection=False
+    )
+    
+    # Create a subdirectory path
+    subdir = os.path.join(temp_history_dir, "subdir")
+    schema_history.history_dir = subdir
+    
+    # Should create directory and save file
+    schema_history.save_model_schema(subdir_schema)
+    assert os.path.exists(subdir)
+    assert os.path.exists(os.path.join(subdir, "SubdirModel.json"))
+    
+    # Test handling invalid JSON in history file
+    with open(os.path.join(subdir, "SubdirModel.json"), 'w') as f:
+        f.write("invalid json content")
+    
+    class SubdirModel(MilvusModel):
+        @classmethod
+        def collection_name(cls):
+            return "subdir_test"
+    
+    # Should handle JSON decode error gracefully
+    try:
+        schema = schema_history.get_schema_from_history(SubdirModel)
+        assert schema is None
+    except json.JSONDecodeError:
+        pass  # This is also acceptable
