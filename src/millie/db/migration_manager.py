@@ -13,7 +13,7 @@ from millie.db.migration_builder import MigrationBuilder
 from millie.db.schema_differ import SchemaDiffer
 from millie.db.schema_history import SchemaHistory
 from millie.db.schema import Schema, SchemaField
-from millie.orm.milvus_model import MilvusModel, MilvusModelMeta
+from millie.orm.milvus_model import MilvusModel
 from millie.db.migration import Migration
 from .session import MilvusSession
 
@@ -47,47 +47,25 @@ class MigrationManager:
         import sys
         if self.cwd not in sys.path:
             sys.path.insert(0, self.cwd)
-            
-        # Clear existing models before discovery
-        MilvusModelMeta._models.clear()
-            
-        # Find all Python files in the specified directory
-        model_glob = os.getenv('MILLIE_MODEL_GLOB')
-        files = []
-        if model_glob:
-            # Use the model_glob as a glob pattern
-            files = glob.glob(os.path.join(self.cwd, model_glob))
-        else:
-            files = glob.glob(os.path.join(self.cwd, "**/*.py"), recursive=True)
-            
-        for file_path in files:
-            if not os.path.isfile(file_path):
+        
+        # Import all Python files to trigger model registration
+        for file in glob.glob(os.path.join(self.cwd, os.getenv('MILLIE_MODEL_GLOB', "**/*.py")), recursive=True):
+            if "venv" in file or "site-packages" in file:
                 continue
-                
-            # Skip files in venv directories and test files
-            if "venv" in file_path or "site-packages" in file_path:
-                continue
-                
             try:
-                # Import the module
-                module_name = os.path.splitext(os.path.basename(file_path))[0]
-                spec = importlib.util.spec_from_file_location(module_name, file_path)
-                if not spec or not spec.loader:
-                    continue
-                    
-                module = importlib.util.module_from_spec(spec)
-                sys.modules[module_name] = module
-                spec.loader.exec_module(module)
-                
-            except Exception as e:
-                print(f"Warning: Failed to process {file_path}: {str(e)}")
-                
+                spec = importlib.util.spec_from_file_location("module", file)
+                if spec and spec.loader:
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+            except Exception:
+                continue
+        
         # Return all registered models
-        return MilvusModelMeta.get_all_models()
+        return [model for model in MilvusModel.get_all_models() if model != MilvusModel]
         
     def _get_model_by_name(self, model_name: str) -> Type[MilvusModel]:
         """Get model class by name."""
-        return MilvusModelMeta.get_model(model_name)
+        return MilvusModel.get_model(model_name)
     
     def detect_changes(self, save_schema: bool = False):
         """Detect schema changes for all @MilvusModel classes"""
@@ -95,7 +73,7 @@ class MigrationManager:
         changes = {}
         for model in models:
             model_changes = self.detect_changes_for_model(model, save_schema)
-            if model_changes["added"] or model_changes["removed"] or model_changes["modified"]:
+            if model_changes.get("initial", False) or model_changes["added"] or model_changes["removed"] or model_changes["modified"]:
                 changes[model.__name__] = model_changes
 
         return changes
@@ -109,11 +87,15 @@ class MigrationManager:
         current_schema = history.get_schema_from_history(model_cls)
         new_schema = Schema.from_model(model_cls)
         
-        # If no current schema exists, treat all fields as added
+        # If no current schema exists, build initial schema
         if current_schema is None:
             initial_schema = history.build_initial_schema(model_cls)
+            # For initial schema, include all fields since they need to be added
             added_fields = initial_schema.fields
-            history.save_model_schema(initial_schema) if save_schema else None
+            
+            if save_schema:
+                history.save_model_schema(initial_schema)
+            
             return {
                 "initial": True,
                 "added": added_fields,
@@ -127,7 +109,6 @@ class MigrationManager:
         # Only save the new schema if there are actual changes
         if save_schema and (changes["added"] or changes["removed"] or changes["modified"]):
             history.save_model_schema(new_schema)
-
             
         return changes
         

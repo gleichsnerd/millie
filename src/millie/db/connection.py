@@ -5,8 +5,6 @@ from pymilvus import Collection, connections
 import logging
 from dotenv import load_dotenv
 
-load_dotenv()
-
 logger = logging.getLogger(__name__)
 
 class MilvusConnection:
@@ -20,11 +18,16 @@ class MilvusConnection:
             cls._instance = super().__new__(cls)
         return cls._instance
     
-    def __init__(self, host: str = os.getenv('MILVUS_HOST', 'localhost'), port: int = int(os.getenv('MILVUS_PORT', 19530)), db_name: str = os.getenv('MILVUS_DB_NAME', 'default')):
+    def __init__(self, host: str | None = None, port: int | None = None, db_name: str | None = None):
         if not hasattr(self, 'initialized'):
-            self.host = host
-            self.port = port
-            self.db_name = db_name
+            # Load environment variables
+            load_dotenv()
+            
+            # Set connection parameters with priority: explicit args > env vars > defaults
+            self.host = host or os.getenv('MILVUS_HOST', 'localhost')
+            self.port = port or int(os.getenv('MILVUS_PORT', '19530'))
+            self.db_name = db_name or os.getenv('MILVUS_DB_NAME', 'default')
+            
             self.initialized = True
             self._connect()
     

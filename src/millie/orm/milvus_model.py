@@ -1,28 +1,238 @@
-from typing import Dict, Any, Type, TypeVar, Optional, List, ClassVar, get_type_hints, Union
-from abc import ABC, abstractmethod, ABCMeta
+"""Base class for Milvus models."""
+from typing import Dict, Any, Type, TypeVar, Optional, List, ClassVar, get_type_hints, Union, get_origin, get_args
+from abc import ABC, abstractmethod
 from datetime import datetime
 import json
-from dataclasses import dataclass, field as dataclass_field, fields as dataclass_fields, is_dataclass, MISSING
-from typeguard import check_type
+import logging
+from dataclasses import dataclass, field as dataclass_field, fields, MISSING
+import uuid
 from pymilvus import DataType, FieldSchema, Hit, Collection
+from typeguard import check_type, TypeCheckError
 
+from millie.db.schema import Schema
 from millie.orm.fields import milvus_field
-from millie.orm.base_model import BaseMilvusModel, MilvusModelMeta
 from millie.db.connection import MilvusConnection
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar('T', bound='MilvusModel')
 
-class TypeCheckError(TypeError):
-    """Raised when a type check fails."""
-    pass
+# Registry of all model classes
+MODEL_REGISTRY: Dict[str, Type['MilvusModel']] = {}
 
-class MilvusModel(BaseMilvusModel, metaclass=MilvusModelMeta):
-    """Milvus model with database operations."""
-    embedding: Optional[List[float]] = milvus_field(DataType.FLOAT_VECTOR, dim=1536, default=None)
-    metadata: Dict[str, Any] = milvus_field(DataType.JSON, default_factory=dict)
+def register_model(cls: Type[T]) -> Type[T]:
+    """Register a model class in the registry."""
+    MODEL_REGISTRY[cls.__name__] = cls
+    return cls
+
+def eval_type(type_hint: Any) -> Type:
+    """Evaluate a type hint to get its concrete type.
+    
+    Args:
+        type_hint: The type hint to evaluate
+        
+    Returns:
+        The concrete type
+    """
+    # Handle Optional types
+    origin = get_origin(type_hint)
+    if origin is Union:
+        args = get_args(type_hint)
+        # Optional[T] is Union[T, None]
+        if len(args) == 2 and args[1] is type(None):
+            return eval_type(args[0])
+    # Handle List, Dict, etc.
+    elif origin is not None:
+        return origin
+    # Handle simple types
+    return type_hint
+
+@dataclass(kw_only=True)
+class MilvusModel(ABC):
+    """Base class for all Milvus models.
+    
+    This is a dataclass that provides:
+    1. Schema generation for Milvus
+    2. Serialization/deserialization
+    3. Model registration for tracking
+    4. Milvus collection operations (CRUD)
+    
+    All subclasses must define:
+    - id: str = milvus_field(DataType.VARCHAR, max_length=100, is_primary=True)
+    - embedding: Optional[List[float]] = milvus_field(DataType.FLOAT_VECTOR, dim=1536)
+    - metadata: Dict[str, Any] = milvus_field(DataType.JSON)
+    """
     
     # Class variable to mark migration collections
     is_migration_collection: ClassVar[bool] = False
+    
+    def __init_subclass__(cls, **kwargs):
+        """Make sure subclasses are also dataclasses and registered."""
+        super().__init_subclass__(**kwargs)
+        # Register the model class
+        register_model(cls)
+        # Make sure subclasses are also dataclasses
+        dataclass(cls, kw_only=True)
+    
+    def __post_init__(self):
+        """Validate field types after initialization."""
+        for field_name, field in self.__class__.__dataclass_fields__.items():
+            if str(field.type).startswith('typing.ClassVar'):
+                continue
+                
+            value = getattr(self, field_name)
+            
+            # Skip None values for Optional fields or fields with default_factory
+            if value is None:
+                if field.default_factory is not MISSING or 'Optional' in str(field.type):
+                    continue
+                if not field.metadata.get('required', True):
+                    continue
+            
+            try:
+                # Special handling for List[float] type
+                if eval_type(field.type) == list and field_name == 'embedding' and value is not None:
+                    if not isinstance(value, list) or not all(isinstance(x, (int, float)) for x in value):
+                        raise TypeCheckError(f"{type(value).__name__} did not match any element in the union")
+                # Basic type checking
+                elif not isinstance(value, eval_type(field.type)):
+                    raise TypeCheckError(f"{type(value).__name__} is not an instance of {field.type}")
+            except Exception as e:
+                raise TypeCheckError(str(e))
+    
+    @classmethod
+    @abstractmethod
+    def collection_name(cls) -> str:
+        """Get the collection name for this model."""
+        ...
+    
+    @classmethod
+    def schema(cls) -> Schema:
+        """Generate the schema for this model."""
+        fields = []
+        for field_name, field in cls.__dataclass_fields__.items():
+            if not str(field.type).startswith('typing.ClassVar'):
+                milvus_info = field.metadata.get('milvus')
+                if milvus_info:
+                    # Get field parameters from milvus_info
+                    kwargs = {}
+                    if hasattr(milvus_info, 'max_length'):
+                        kwargs['max_length'] = milvus_info.max_length
+                    if hasattr(milvus_info, 'dim'):
+                        kwargs['dim'] = milvus_info.dim
+                    if hasattr(milvus_info, 'is_primary'):
+                        kwargs['is_primary'] = milvus_info.is_primary
+                    
+                    fields.append(
+                        FieldSchema(
+                            name=field_name,
+                            dtype=milvus_info.dtype,
+                            **kwargs
+                        )
+                    )
+        return Schema(
+            name=cls.__name__,
+            collection_name=cls.collection_name(),
+            fields=fields,
+            is_migration_collection=cls.is_migration_collection
+        )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert model to dictionary for Milvus insertion."""
+        result = {}
+        for field_name, field in self.__class__.__dataclass_fields__.items():
+            if str(field.type).startswith('typing.ClassVar'):
+                continue
+                
+            value = getattr(self, field_name)
+            
+            # Handle JSON fields
+            if field.metadata and 'milvus' in field.metadata and field.metadata['milvus'].dtype == DataType.JSON:
+                # Ensure we have a dict to serialize
+                if value is None:
+                    value = {}
+                
+                # Serialize complex types first
+                value = self._serialize_complex_type(value)
+                # Then convert to JSON string
+                value = json.dumps(value)
+            else:
+                value = self._serialize_complex_type(value)
+                
+            # Always include the field, even if None
+            result[field_name] = value
+        
+        return result
+    
+    @classmethod
+    def from_dict(cls: Type[T], data: Dict[str, Any]) -> T:
+        """Create model instance from dictionary."""
+        # Parse JSON fields and convert types
+        parsed_data = {}
+        for key, value in data.items():
+            # Get field type from annotations
+            field_type = get_type_hints(cls).get(key)
+            
+            # Handle JSON fields
+            if isinstance(value, str) and value.startswith('{') and value.endswith('}'):
+                try:
+                    parsed_data[key] = json.loads(value)
+                except json.JSONDecodeError:
+                    parsed_data[key] = value
+            # Handle datetime fields
+            elif field_type == datetime and isinstance(value, str):
+                try:
+                    parsed_data[key] = datetime.fromisoformat(value)
+                except ValueError:
+                    parsed_data[key] = value
+            else:
+                parsed_data[key] = value
+        
+        return cls(**parsed_data)
+    
+    def _serialize_complex_type(self, value: Any) -> Any:
+        """Serialize complex data types."""
+        if isinstance(value, list):
+            return [self._serialize_complex_type(item) for item in value]
+        elif isinstance(value, dict):
+            return {k: self._serialize_complex_type(v) for k, v in value.items()}
+        elif isinstance(value, datetime):
+            return value.isoformat()
+        elif hasattr(value, 'to_dict'):
+            return value.to_dict()
+        return value
+    
+    @classmethod
+    def get_all_models(cls) -> List[Type['MilvusModel']]:
+        """Get all registered model classes."""
+        return list(MODEL_REGISTRY.values())
+    
+    @classmethod
+    def get_model(cls, name: str) -> Optional[Type['MilvusModel']]:
+        """Get a registered model by name."""
+        return MODEL_REGISTRY.get(name)
+    
+    def serialize_for_json(self) -> str:
+        """Serialize model to JSON string."""
+        return json.dumps(self.to_dict(), default=str)
+    
+    @classmethod
+    def deserialize_from_json(cls: Type[T], json_str: str) -> T:
+        """Create model instance from JSON string."""
+        data = json.loads(json_str)
+        return cls.from_dict(data)
+    
+    @staticmethod
+    def _convert_hit_to_dict(data: Union[Dict[str, Any], Hit]) -> Dict[str, Any]:
+        """Convert Hit object or dictionary to properly typed dictionary."""
+        # If data is a Hit object, get its fields
+        if isinstance(data, Hit):
+            data = dict(data.fields)
+        
+        if 'embedding' in data:
+            # Convert embedding values to float
+            data['embedding'] = [float(x) for x in data['embedding']]
+        return data
     
     @classmethod
     def _get_collection(cls) -> Collection:
@@ -131,12 +341,20 @@ class MilvusModel(BaseMilvusModel, metaclass=MilvusModelMeta):
             # Get IDs for this batch
             ids = [model.id for model in batch]
             # Delete existing records
-            if hasattr(self, 'id') and getattr(self, 'id'):
-                # Delete existing record
-                expr = 'id in ["' + '","'.join(ids) + '"]'
+            expr = f'id in ["{id}" for id in {ids}]'
+            try:
                 collection.delete(expr)
+            except Exception as e:
+                print(f"Error deleting existing records: {str(e)}")
+                return False
+            
             # Insert updated records
-            collection.insert([model.to_dict() for model in batch])
+            try:
+                data = [model.to_dict() for model in batch]
+                collection.insert(data)
+            except Exception as e:
+                print(f"Error inserting updated records: {str(e)}")
+                return False
         
         # Process inserts in batches
         if inserts:
@@ -322,121 +540,4 @@ class MilvusModel(BaseMilvusModel, metaclass=MilvusModelMeta):
             output_fields=output_fields or ["*"]
         )
         
-        return [cls.from_dict(cls._convert_hit_to_dict(hit)) for hit in results[0]]
-    
-    @classmethod
-    @abstractmethod
-    def collection_name(cls) -> str:
-        """Get the collection name for this model."""
-        ...
-    
-    @classmethod
-    def schema(cls) -> Dict[str, Any]:
-        """Get the Milvus schema for this model by inspecting decorated fields."""
-        fields = []
-        
-        # Get all dataclass fields including from parent classes
-        for field in dataclass_fields(cls):
-            if str(field.type).startswith('typing.ClassVar'):
-                continue
-                
-            # Check if field has Milvus metadata
-            if field.metadata and 'milvus' in field.metadata:
-                milvus_info = field.metadata['milvus']
-                fields.append(
-                    FieldSchema(
-                        field.name,
-                        milvus_info.data_type,
-                        **milvus_info.kwargs
-                    )
-                )
-        
-        return {"fields": fields}
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert model to dictionary for Milvus insertion."""
-        result = {}
-        for field in dataclass_fields(self):
-            if not str(field.type).startswith('typing.ClassVar'):
-                value = getattr(self, field.name)
-                if value is not None and value != {}:
-                    # Serialize complex types
-                    if field.name in ['metadata', 'extra_data']:
-                        value = json.dumps(self._serialize_complex_type(value))
-                    else:
-                        value = self._serialize_complex_type(value)
-                    result[field.name] = value
-        return result
-    
-    @classmethod
-    def from_dict(cls: Type[T], data: Dict[str, Any]) -> T:
-        """Create model instance from dictionary."""
-        # Parse JSON strings back to dicts
-        if isinstance(data.get('metadata'), str):
-            data['metadata'] = json.loads(data['metadata'])
-        
-        # Handle any other JSON fields
-        for key, value in data.items():
-            if isinstance(value, str):
-                # Try to parse JSON fields
-                if value.startswith('{') and value.endswith('}'):
-                    try:
-                        data[key] = json.loads(value)
-                    except json.JSONDecodeError:
-                        pass  # Not valid JSON, leave as string
-                
-                # Try to parse datetime fields
-                if key in ['created_at', 'updated_at'] or key.endswith('_at'):
-                    try:
-                        data[key] = datetime.fromisoformat(value.replace('Z', '+00:00'))
-                    except (ValueError, TypeError):
-                        pass  # Not a valid datetime string, leave as string
-        
-        # Filter out class variables
-        instance_data = {
-            k: v for k, v in data.items()
-            if k in cls.__annotations__ and not str(cls.__annotations__[k]).startswith('typing.ClassVar')
-        }
-        
-        return cls(**instance_data)
-    
-    def _serialize_complex_type(self, value: Any) -> Any:
-        """Serialize complex data types."""
-        if isinstance(value, list):
-            return [self._serialize_complex_type(item) for item in value]
-        elif isinstance(value, dict):
-            return {k: self._serialize_complex_type(v) for k, v in value.items()}
-        elif isinstance(value, datetime):
-            return value.isoformat()
-        elif hasattr(value, 'to_dict'):
-            return value.to_dict()
-        return value
-    
-    def serialize_for_json(self) -> str:
-        """Serialize model to JSON string."""
-        return json.dumps(self.to_dict(), default=str)
-    
-    @classmethod
-    def deserialize_from_json(cls: Type[T], json_str: str) -> T:
-        """Create model instance from JSON string."""
-        data = json.loads(json_str)
-        return cls.from_dict(data)
-    
-    @staticmethod
-    def _convert_hit_to_dict(data: Union[Dict[str, Any], Hit]) -> Dict[str, Any]:
-        """Convert Hit object or dictionary to properly typed dictionary.
-        
-        Args:
-            data: Raw data from Milvus, either a dict or Hit object
-            
-        Returns:
-            Dictionary with properly typed values
-        """
-        # If data is a Hit object, get its fields
-        if isinstance(data, Hit):
-            data = dict(data.fields)
-        
-        if 'embedding' in data:
-            # Convert embedding values to float
-            data['embedding'] = [float(x) for x in data['embedding']]
-        return data 
+        return [cls.from_dict(cls._convert_hit_to_dict(hit)) for hit in results[0]] 

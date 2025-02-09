@@ -16,48 +16,58 @@ class SchemaDiffer:
 
     def diff_schemas(self, old_schema: Schema | None, new_schema: Schema) -> Dict[str, List[SchemaField]]:
         """Compare two schemas and return the differences."""
-        changes = {
-            "added": [],
-            "removed": [],
-            "modified": []
-        }
-
-        # If old_schema is None, treat all fields as added
+        # Handle initial schema case
         if old_schema is None:
-            for field in new_schema.fields:
-                if field.name not in ['embedding', 'metadata']:
-                    changes["added"].append(field)
-                    changes["initial"] = True
-            return changes
-
+            # For initial schema, include all fields
+            return {
+                "initial": True,
+                "added": new_schema.fields,
+                "removed": [],
+                "modified": []
+            }
+        
         old_fields = {f.name: f for f in old_schema.fields}
         new_fields = {f.name: f for f in new_schema.fields}
-
-        # Find added fields
+        
+        added = []
+        removed = []
+        modified = []
+        
+        # Check for added fields
         for name, field in new_fields.items():
-            if name not in old_fields and name not in ['embedding', 'metadata']:
-                changes["added"].append(field)
-
-        # Find removed fields
+            if name not in old_fields:
+                added.append(field)
+        
+        # Check for removed fields
         for name, field in old_fields.items():
-            if name not in new_fields and name not in ['embedding', 'metadata', 'id']:
-                changes["removed"].append(field)
-
-        # Find modified fields
-        for name, new_field in new_fields.items():
-            if name in old_fields:
-                old_field = old_fields[name]
+            if name not in new_fields:
+                removed.append(field)
+        
+        # Check for modified fields
+        for name, old_field in old_fields.items():
+            if name in new_fields:
+                new_field = new_fields[name]
                 if self._is_field_modified(old_field, new_field):
-                    changes["modified"].append((old_field, new_field))
-
-        return changes
+                    modified.append((old_field, new_field))
+        
+        # Log changes for debugging
+        if added or removed or modified:
+            logger.debug(f"Schema changes detected:")
+            if added:
+                logger.debug(f"Added fields: {[f.name for f in added]}")
+            if removed:
+                logger.debug(f"Removed fields: {[f.name for f in removed]}")
+            if modified:
+                logger.debug(f"Modified fields: {[(old.name, new.name) for old, new in modified]}")
+        
+        return {
+            "added": added,
+            "removed": removed,
+            "modified": modified
+        }
 
     def _is_field_modified(self, old_field: SchemaField, new_field: SchemaField) -> bool:
         """Check if a field has been modified."""
-        # Don't consider changes to base fields
-        if old_field.name in ['embedding', 'metadata']:
-            return False
-            
         return (
             old_field.dtype != new_field.dtype or
             old_field.max_length != new_field.max_length or
